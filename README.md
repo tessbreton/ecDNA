@@ -4,3 +4,10 @@
 ```bash
 pip install -r requirements.txt
 ```
+
+If you encounter the error `ValueError: Mime type rendering requires nbformat>=4.2.0 but it is not installed` while rendering a Plotly figure, then upgrade nbformat by running the following command in your terminal or command prompt
+```bash
+pip install --upgrade nbformat
+```
+
+and then **restart VSCode** completely. This should solve the issue.
