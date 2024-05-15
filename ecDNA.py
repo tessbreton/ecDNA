@@ -33,7 +33,7 @@ class Population:
                  initial_nb_without=0, 
                  turnover=1, 
                  max_cells=1e5, 
-                 max_time=100,
+                 max_time=30,
                  s=1,
                  growth='constant',
                  target_size=1000,
@@ -274,30 +274,41 @@ class Population:
                     self.times = times
                     return times, cell_counts
 
-    def simulate_moran(self, size=1000, verbose=True):
+    def simulate_moran(self, size=1000, n_events=5e4, verbose=True, from_start=True, initial_cell_counts=None):
+        """
+        Simulate population evolution using Moran process
+        If from_start, the simulation starts with 1 cell with ecDNA and size-1 cells without ecDNA.
+        Otherwise, the simulation starts with the initial_cell_counts dictionary.
+        """
+
+
         if verbose: print(f"Simulating cell population evolution using Moran process. Total population size: {size} cells.")
         if verbose: print(f"Fitness function: {self.fitness}\n")
 
         failed_simulations = 0
         self.model = 'Moran'
-
+        
         while True:
 
             while True:
 
-                self.population = {0: size-1, 1: 1}
+                if from_start: self.population = {0: size-1, 1: 1}
+                else: self.population = initial_cell_counts.copy()
 
                 current_time = 0
                 cell_counts = [self.population.copy()]
                 times = [current_time]
+                events_count = 0
 
                 self.fitness_by_key = {key: self.cell_fitness(key) for key in self.population.keys()}  
                 # fitness_by_key = {k: fitness of a cell with k copies of ecDNA}
 
-                with tqdm(total=self.max_time, leave=False) as pbar:
+                #with tqdm(total=self.max_time, leave=False) as pbar:
+                with tqdm(total=n_events, leave=False) as pbar:
                     pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")  # Dynamic update of simulation number
 
-                    while current_time < self.max_time:
+                    #while current_time < self.max_time:
+                    for _ in range(n_events):
                         
                         # COMPUTE TIME TO NEXT EVENT
                         keys = list(self.population.keys())
@@ -323,10 +334,10 @@ class Population:
                         current_time += time_to_next_event
                         cell_counts.append(self.population.copy())
                         times.append(current_time)
+                        events_count += 1
 
-                        # pbar.update(sum(self.population.values()) - pbar.n)
-                        pbar.update(current_time - pbar.n)
-
+                        #pbar.update(current_time - pbar.n)
+                        pbar.update(events_count - pbar.n)
 
                         if size==self.population[0]: 
                             break
@@ -339,8 +350,6 @@ class Population:
 
                 if restart_simulation:
                     failed_simulations += 1
-                    # print(f'Restarting simulation...')
-                    self.population = {0: self.initial_nb_without, 1: 1}
                     break
                 else:
                     if verbose: print(f'Simulation {failed_simulations+1} complete.')
@@ -417,7 +426,7 @@ class Population:
         histogram_trace = go.Histogram(x=data, xbins=dict(start=0,size=bin_size), marker=dict(color=plot_color))
 
         layout = go.Layout(
-            title=title+f" on {sum(timestep_ecDNA_counts.values()):,.0f} cells"+f" with {self.model} model and {self.fitness} fitness function (s={self.s})",
+            title=title+f" on {sum(timestep_ecDNA_counts.values()):,.0f} cells"+f" with {self.model} model and {self.fitness} fitness function (s={self.s:.3f})",
             xaxis=dict(title='Number of copies'),
             bargap=0.1,
             plot_bgcolor=plot_bgcolor
