@@ -3,6 +3,7 @@ from ecDNA import *
 from utils import *
 import numpy as np
 from math import ceil
+import pickle
 
 # ABC -----------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -35,7 +36,7 @@ def compute_distance(d1, d2, distance_type='L1'):
     else:
         raise ValueError("Unsupported distance type. Choose from 'L1' or 'L2' or 'Wasserstein'.")
     
-    return distance
+    return float(distance)
 
 
 # Define the function to simulate data
@@ -45,7 +46,18 @@ def simulate_data(n_events, fitness, s, size=1000):
     return population.cell_counts[-1]
 
 # Define the ABC algorithm
-def abc(target_data, n_events, fitness, metric='L1', range_s=(0, 1), num_samples=3, num_simulations=1, epsilon=10, plot_all=False):
+def abc(target_data, 
+        n_events, 
+        fitness, 
+        metric='L1', 
+        range_s=(0.015, 2), 
+        num_samples=3, 
+        num_simulations=1, 
+        plot_all=False, 
+        save_results=False,
+        run_folder=None
+        ):
+    
     best_s = None
     best_distance = float('inf')
     best_simulated_data = None
@@ -97,7 +109,28 @@ def abc(target_data, n_events, fitness, metric='L1', range_s=(0, 1), num_samples
             best_distance = distance
             best_s = s
             best_simulated_data = simulated_data
+
+    if save_results:
+        with open(run_folder+'/results.yaml', 'w') as f:
+            yaml.dump({
+                'best_s': best_s,
+                'best_distance': best_distance,
+                'best_simulated_data': best_simulated_data,
+                's_values': s_values,
+                'distances': distances,
+                'simulated_data_all': simulated_data_all
+            }, f)
         
+        with open(run_folder+'/params.yaml', 'w') as f:
+            yaml.dump({
+                'fitness': fitness,
+                'n_events': n_events,
+                'target_data': target_data,
+                'metric': metric,
+                'range_s':range_s, 
+                'num_samples': num_samples, 
+                'num_simulations': num_simulations, 
+            }, f)
 
 
     return best_s, best_distance, best_simulated_data, s_values, distances, simulated_data_all
@@ -117,7 +150,6 @@ def run_simulations(best_s_values, n_events, fitness, num_simulations=1):
 
 def get_best_indices(distances, top_percent):
     '''Find indices corresponding to {top_percent}% smallest distances'''
-    top_percent = 5
     num_points = len(distances)
     num_smallest_points = ceil(0.01 * top_percent * num_points)
     smallest_indices = np.argsort(distances)[:num_smallest_points]
@@ -127,21 +159,20 @@ def get_best_indices(distances, top_percent):
 
 # PLOTS -----------------------------------------------------------------------------------------------------------------------------------------------
 
-def plot_best_points(s_values, 
+def plot_best_points_util(s_values, 
                      distances, 
+                     metric,
+                     filepath=None,
                      top_percent=5, 
                      best_color='turquoise',
-                     save_fig=False, 
-                     width=700, 
-                     height=400, 
-                     filepath='best_points.png', 
-                     scale=3):
+                     show=True,
+                     save=False, width=700, height=400, scale=3):
+    
     fig = go.Figure()  # Initialize the figure
 
     # Get indices of the best points (smallest distances)
     smallest_indices = get_best_indices(distances, top_percent)
     
-    # Plot all points in black
     fig.add_trace(go.Scatter(
         x=s_values,
         y=distances,
@@ -156,20 +187,51 @@ def plot_best_points(s_values,
         y=np.array(distances)[smallest_indices],
         mode='markers',
         marker=dict(color=best_color, size=8),
-        name='5% smallest distances'
+        name=f'{top_percent}% smallest distances'
     ))
 
     # Update layout
     fig.update_layout(
         xaxis_title='s',
-        yaxis_title='Wasserstein Distance',
+        yaxis_title='Distance',
         plot_bgcolor='white'
     )
+    fig.update_traces(hovertemplate='s: %{x:.3f}<br>'+metric+' distance: %{y:.1f}')  # Utilisez '.2f' pour afficher 2 décimales
 
-    # Show the plot
-    fig.show()
+    if show: fig.show()
 
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)
+
+
+def plot_posterior_util(s_values, 
+                   distances, 
+                   top_percent=5, 
+                   plot_color='lightskyblue',
+                   show=True,
+                   save_fig=False, filepath=None, 
+                   width=700, height=400, scale=5):   
+    
+    smallest_indices = get_best_indices(distances, top_percent)
+    top_s_values = np.array(s_values)[smallest_indices].tolist()
+    
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=top_s_values, name='top 5%', marker_color=plot_color, opacity=1, 
+                                        xbins=dict(size=0.005), histnorm='probability density',marker_pattern_shape=""))
+    fig.update_layout(
+        title=f'Posterior distribution of selection parameter s ({top_percent}% best over {len(s_values)} samples)',
+        xaxis_title='s values',
+        yaxis_title='Count',
+        barmode='overlay',
+        bargap=0.1,
+        plot_bgcolor='white'
+    )
+    if show: fig.show()
 
     if save_fig:
         fig.update_layout(width=width, height=height)
         fig.write_image(filepath, scale=scale)
+
+
+

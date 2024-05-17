@@ -117,25 +117,26 @@ def plot_histogram_dict(dictionary,bin_size=5,
 
     fig.show()
 
+from scipy.stats import sem, t
 
 def plot_histograms_dict_overlay(dictionaries:list[dict], 
                                  true_data=None,
+                                 bin_size=10,
                                  title='Normalized distributions of ecDNA counts', 
-                                 xaxis_title='ecDNA counts', 
-                                 yaxis_title='Frequency',
+                                 xaxis_title='ecDNA counts', yaxis_title='Frequency',
                                  labels=('Passage 4', 'Passage 15'),
                                  colors=('violet', 'deepskyblue'),
                                  opacity=(1, 0.5),
-                                 plot_avg=False,
-                                 plot_true=False,
-                                 avg_color='white',
+                                 plot_avg=False, avg_color='red', avg_opacity=0.4,
+                                 confidence_level=5, CI_linecolor='orangered', CI_fillcolor='rgba(206, 255, 79, 0.2)',
+                                 plot_all=True,
+                                 plot_ref=False,
+                                 true_label='Reference data',
                                  plot_bgcolor='white',
-                                 bin_size=10,
-                                 save_fig=False,
-                                 width=1000,
-                                 height=500,
-                                 scale=5,
-                                 filepath='histograms_overlay.png'):  
+                                 show=True,
+                                 save=False,filepath='histograms_overlay.png',
+                                 width=1000, height=500, scale=5,
+                                 ):  
 
     fig = go.Figure()
 
@@ -143,27 +144,56 @@ def plot_histograms_dict_overlay(dictionaries:list[dict],
     data_list = [[key for key, value in dictionary.items() for _ in range(value)] for dictionary in dictionaries]
     max_data = max(max(data) for data in data_list)
 
-    if plot_avg: avg_hist = np.zeros((max_data + bin_size - 1) // bin_size)
+    if plot_avg: 
+        histograms = []
+        bins = np.arange(0, max_data + bin_size, bin_size)
 
-    for data, label, color, op in zip(data_list, labels, colors, opacity):
-        if plot_avg:
-            hist, bins = np.histogram(data, bins=np.arange(0, max_data + bin_size, bin_size), density=True)
-            avg_hist += hist
-        fig.add_trace(go.Histogram(x=data, name=label, marker_color=color, opacity=op, 
-                                    xbins=dict(size=bin_size), histnorm='probability density',marker_pattern_shape=""))
-    
-    if plot_true:
+    if plot_all or plot_avg:
+        for i, data in enumerate(data_list):
+            if plot_avg:
+                hist, bins = np.histogram(data, bins=np.arange(0, max_data + bin_size, bin_size), density=True)
+                histograms.append(hist)
+            if plot_all:
+                label, color, op = labels[i], colors[i], opacity[i]
+                fig.add_trace(go.Histogram(x=data, name=label, marker_color=color, opacity=op, 
+                                            xbins=dict(size=bin_size), histnorm='probability density',marker_pattern_shape=""))
+        
+    if plot_ref:
         true_data = [key for key, value in true_data.items() for _ in range(value)]
-        fig.add_trace(go.Histogram(x=true_data, name='True data', marker_color='palegreen', opacity=0.7, 
+        fig.add_trace(go.Histogram(x=true_data, name=true_label, marker_color='palegreen', opacity=0.7, 
                                     xbins=dict(size=bin_size), histnorm='probability density',marker_pattern_shape=""))
     
     if plot_avg:
-        avg_hist /= len(dictionaries)
+        avg_hist = np.mean(histograms, axis=0)
         bin_centers = (bins[:-1] + bins[1:]) / 2 - 0.5
         # Define hover text with bin ranges
         hover_text = [f'({bins[i]:.0f} - {bins[i+1]-1:.0f})' for i in range(len(bins) - 1)]
         hoverinfo = 'text+y'
-        fig.add_trace(go.Bar(x=bin_centers, y=avg_hist, name='Average Histogram', marker_color=avg_color, opacity=0.3, marker_pattern_shape='x',hoverinfo=hoverinfo, hovertext=hover_text))
+        # fig.add_trace(go.Bar(x=bin_centers, y=avg_hist, name='Average simulations histogram', marker_color=avg_color, opacity=avg_opacity, marker_pattern_shape='x',hoverinfo=hoverinfo, hovertext=hover_text))
+
+        # Compute percentiles for confidence interval
+        lower_percentile = confidence_level
+        upper_percentile = 100 - confidence_level
+        lower_bound = np.percentile(histograms, lower_percentile, axis=0)
+        upper_bound = np.percentile(histograms, upper_percentile, axis=0)
+
+        # Add confidence interval shaded region
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([bins[:-1], bins[:-1][::-1]]),
+            y=avg_hist,
+            line=dict(color=avg_color, width=2),
+            name=f'Mean simulations histogram'
+        ))
+
+        # Add confidence interval shaded region
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([bins[:-1], bins[:-1][::-1]]),
+            y=np.concatenate([upper_bound, lower_bound[::-1]]),
+            fill='toself',
+            fillcolor=CI_fillcolor,
+            line=dict(color=CI_linecolor, width=1, dash='dash'),
+            name=f'{upper_percentile}% Confidence Interval'
+        ))
 
 
 
@@ -176,9 +206,9 @@ def plot_histograms_dict_overlay(dictionaries:list[dict],
         plot_bgcolor=plot_bgcolor
     )
 
-    fig.show()
+    if show: fig.show()
 
-    if save_fig:
+    if save:
         fig.update_layout(width=width, height=height)
         fig.write_image(filepath, scale=scale)
 
@@ -381,14 +411,27 @@ def plot_mean_CN_multi_simulations(n_simulations,
 
 
 
-# DATA -----------------------------------------------------------------------------------------------------------------------------------------------
+# LOADING AND SAVING DATA -----------------------------------------------------------------------------------------------------------------------------------------------
 
 import yaml
+import os
 
 def save_yaml(dictionary, file_path):
     with open(file_path, "w") as yaml_file:
         yaml.dump(dictionary, yaml_file)
     print('Dictionary saved as yaml file to', file_path)
+
+def get_save_folder(base_path='runs'):
+    index = 1
+    while True:
+        result_folder = os.path.join(base_path, f"run{index}")
+        
+        if not os.path.exists(result_folder):
+            os.makedirs(result_folder)
+            os.makedirs(result_folder+'/plots')
+            return result_folder
+        
+        index += 1
 
 
 def load_yaml(file_path):

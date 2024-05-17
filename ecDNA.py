@@ -319,7 +319,7 @@ class Population:
                         time_to_next_event = compute_time_to_next_event(total_fitness)
 
                         # CELL DEATH
-                        random_key_death = np.random.choice(keys, p=[self.population[key]/(size) for key in keys]) # uniform 
+                        random_key_death = int(np.random.choice(keys, p=[self.population[key]/(size) for key in keys])) # uniform 
                         self.cell_death(random_key_death)
 
                         # Update population fitness after cell death
@@ -327,7 +327,7 @@ class Population:
                         total_fitness = sum(fitness_grouped.values())
                         probabilities_by_clone = [fitness/ total_fitness for fitness in list(fitness_grouped.values())] # probabilities_by_clone = {k: probability to chose the clone with k ecDNA copies}
                         # CELL DIVISION
-                        random_key_division = np.random.choice(keys, p=probabilities_by_clone)
+                        random_key_division = int(np.random.choice(keys, p=probabilities_by_clone))
                         self.cell_division(random_key_division)
 
                         # UPDATE CURRENT POPULATION
