@@ -1,16 +1,15 @@
 import multiprocessing as mp
-from tqdm import tqdm
 from scipy.stats import wasserstein_distance
-import os
+import os, time, datetime
 import numpy as np
-from utils import normalize_distribution, load_yaml, save_yaml, get_save_folder, plot_histograms_avg
+from utils import standard_score, normalize_distribution, filter_distribution, load_yaml, save_yaml, get_save_folder, plot_histograms_avg
 from ecDNA import *
 from abcomputation import get_best_indices
-import time, datetime
 
 class ABCInference:
-    def __init__(self, num_samples, fitness='log', size=1000, top_percent=5):
+    def __init__(self, num_samples, fitness='log', size=1000, top_percent=5, synthetic=False):
         self.num_samples = num_samples
+        print('Number of samples:', num_samples)
         self.fitness = fitness
         self.size = size
         self.run_folder = None
@@ -19,11 +18,21 @@ class ABCInference:
         self.sampled_params = []
         self.simulated_data_list = []
         self.distances = []
+        self.distancesP4 = []
+        self.distancesP15 = []
 
-    def load_reference(self):        
-        referenceP4 = load_yaml('data/cell_counts_p4.yaml')
-        referenceP15 = load_yaml('data/cell_counts_p15.yaml')
-        self.reference_data = {'P4': referenceP4, 'P15': referenceP15}
+        self.threshold = 10
+        self.synthetic = synthetic
+
+    def load_reference(self):
+        base_path = 'synthetic/' if self.synthetic else 'data/'
+
+        reference_files = {'P4': 'cell_counts_p4.yaml', 'P15': 'cell_counts_p15.yaml'}
+        self.reference_data = {key: filter_distribution(load_yaml(base_path + file), self.threshold)
+                               for key, file in reference_files.items()}
+        print(f'\nReference data filtered with threshold {self.threshold}.')
+        for key, file in reference_files.items():
+            print(key,':', base_path + file)
 
     def run_simulation(self):
         raise NotImplementedError("This method should be implemented in a subclass")
@@ -48,23 +57,28 @@ class ABCInference:
         start_time = time.time()
         num_cores = 32
 
+        print('\nRunning simulations in parallel...')
         with mp.Pool(processes=num_cores) as pool:
             results = pool.map(self.worker, [1]*self.num_samples)
 
         for sublist in results:
-            for params, distance, simulated_data in sublist:
+            for params, distances, simulated_data in sublist:
+
+                distance, distanceP4, distanceP15 = distances
 
                 self.sampled_params.append(params)
-                self.simulated_data_list_P4.append(simulated_data['P4'])
-                self.simulated_data_list_P15.append(simulated_data['P15'])
+                self.simulated_data_list_P4.append(filter_distribution(simulated_data['P4'], self.threshold))
+                self.simulated_data_list_P15.append(filter_distribution(simulated_data['P15'], self.threshold))
                 self.distances.append(distance)
+                self.distancesP4.append(distanceP4)
+                self.distancesP15.append(distanceP15)
 
         self.simulated_data = {'P4': self.simulated_data_list_P4, 'P15': self.simulated_data_list_P15}
         
         end_time = time.time()
         total_runtime = end_time - start_time
 
-        print("Inference complete.")
+        print("Run complete.\n")
         print(f"Total samples collected: {len(self.sampled_params)}")
         print(f"Total runtime: {str(datetime.timedelta(seconds=int(total_runtime)))}")
     
@@ -80,19 +94,18 @@ class ABCInference:
         smallest_indices = get_best_indices(self.distances, self.top_percent)
 
         top_simulated_data_P4, top_simulated_data_P15 = [], []
-        top_s, top_start = [], []
+        top_params = []
         top_distances = []
 
         # use one single for loop
         for i in smallest_indices:
             top_simulated_data_P4.append(self.simulated_data_list_P4[i])
             top_simulated_data_P15.append(self.simulated_data_list_P15[i])
-            top_s.append(self.sampled_s[i])
-            top_start.append(self.sampled_start[i])
+            top_params.append(self.sampled_params[i])
             top_distances.append(self.distances[i])
 
         self.top_simulated_data = {'P4': top_simulated_data_P4, 'P15': top_simulated_data_P15}
-        self.top_s, self.top_start = top_s, top_start
+        self.top_params = top_params
         self.top_distances = top_distances
 
         
@@ -111,7 +124,6 @@ class SelectionInference(ABCInference):
         self.sampled_s = []
         self.simulated_data_list_P4 = []
         self.simulated_data_list_P15 = []
-        self.distances_split = {'P4':[], 'P15':[]}
 
     def sample_parameters(self):
         s = np.random.uniform(*self.s_range)
@@ -142,16 +154,16 @@ class SelectionInference(ABCInference):
 
 class DoubleInference(ABCInference):
 
-    def __init__(self, s_range, start_range, num_samples, fitness='log', size=1000):
-        super().__init__(num_samples=num_samples, fitness=fitness, size=size)
+    def __init__(self, s_range, start_range, num_samples, fitness='log', size=1000, synthetic=False):
+        super().__init__(num_samples=num_samples, fitness=fitness, size=size, synthetic=synthetic)
         self.s_range = s_range
         self.start_range = start_range
-        self.run_folder = get_save_folder(base_path='runs/double/parallel')
-        self.distances_split = {'P4':[], 'P15':[]}
+        base_path = 'synthetic' if self.synthetic else 'data'
+        self.run_folder = get_save_folder(base_path='runs/double/'+base_path)
         self.simulated_data_list_P4 = []
         self.simulated_data_list_P15 = []
 
-    def run_simulation(self, s, start):
+    def run_simulation(self, s:float, start:int):
         events_per_passage = 9
         n_passages = 15 - start
         n_events = events_per_passage * n_passages * self.size
@@ -172,6 +184,7 @@ class DoubleInference(ABCInference):
     
     def calculate_distance(self, simulated_data):
         '''weighted sum of Wasserstein distances at P4 and P15'''
+        distances = {}
         total_distance = 0
         weights = {'P4':2, 'P15':0.5}
         
@@ -181,28 +194,64 @@ class DoubleInference(ABCInference):
             values1, weights1 = zip(*reference_normalized.items())
             values2, weights2 = zip(*simulated_normalized.items())
             distance = float(wasserstein_distance(values1, values2, u_weights=weights1, v_weights=weights2))
-            self.distances_split[key].append(distance)
+            distances[key] = distance
+            total_distance += weights[key] * distance
 
-            total_distance += weights[key]*distance
-        return total_distance
+        return total_distance, distances['P4'], distances['P15']
+    
+    def get_top_simulations(self):
+        smallest_indices = get_best_indices(self.distances, self.top_percent)
+
+        top_simulated_data_P4, top_simulated_data_P15 = [], []
+        top_s, top_start = [], []
+        top_distances = []
+
+        # use one single for loop
+        for i in smallest_indices:
+            top_simulated_data_P4.append(self.simulated_data_list_P4[i])
+            top_simulated_data_P15.append(self.simulated_data_list_P15[i])
+            top_s.append(self.sampled_s[i])
+            top_start.append(self.sampled_start[i])
+            top_distances.append(self.distances[i])
+
+        self.top_simulated_data = {'P4': top_simulated_data_P4, 'P15': top_simulated_data_P15}
+        self.top_s = top_s
+        self.top_start = top_start
+        self.top_distances = top_distances
 
     def save_results(self):
+        self.sampled_s = [params['s'] for params in self.sampled_params]
+        self.sampled_start = [params['start'] for params in self.sampled_params]
+
+        # Normalisation des deux listes de distances
+        normalized_distancesP4 = standard_score(self.distancesP4)
+        normalized_distancesP15 = standard_score(self.distancesP15)
+
+        # Combinaison des distances normalisées
+        standard_scores = [(d4 + d15) / 2 for d4, d15 in zip(normalized_distancesP4, normalized_distancesP15)]
+        
         results = {
-            'sampled_s': [params['s'] for params in self.sampled_params],
-            'sampled_start': [params['start'] for params in self.sampled_params],
+            'sampled_s': self.sampled_s,
+            'sampled_start': self.sampled_start,
+            'simulated_data_P4': self.simulated_data_list_P4,
+            'simulated_data_P15': self.simulated_data_list_P15,
             'distances': self.distances,
-            'distances_split': self.distances_split,
+            'distancesP4': self.distancesP4,
+            'distancesP15': self.distancesP15,
+            'standard_scores': standard_scores,
             'num_samples': self.num_samples,
         }
+
         save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, 'results.yaml'))
 
-        top_results = {'top_simulated_data': self.top_simulated_data,
-                                'top_s': self.top_s,
-                                'top_start': self.top_start,
-                                'num_samples': self.num_samples,
-                                'top_distances': self.top_distances}
-        save_yaml(dictionary=top_results,
-                  file_path=os.path.join(self.run_folder, 'topresults.yaml'))
+        # self.get_top_simulations()
+        # top_results = {'top_simulated_data': self.top_simulated_data,
+        #                         'top_s': self.top_s,
+        #                         'top_start': self.top_start,
+        #                         'num_samples': self.num_samples,
+        #                         'top_distances': self.top_distances}
+        # save_yaml(dictionary=top_results,
+        #           file_path=os.path.join(self.run_folder, 'topresults.yaml'))
 
     def plot_results(self):
         # plot average of {top_percent}% best simulations
@@ -215,11 +264,10 @@ class DoubleInference(ABCInference):
 # Sampling parameters for two parameters
 s_range = [0.015, 0.11]
 start_range = [-8, 1]
-num_samples = 10
+num_samples = 1000
 
-abc_inference = DoubleInference(s_range, start_range, num_samples)
+abc_inference = DoubleInference(s_range, start_range, num_samples, synthetic=True)
 abc_inference.load_reference()
 abc_inference.perform_inference()
-abc_inference.get_top_simulations()
 abc_inference.save_results()
-abc_inference.plot_results()
+# abc_inference.plot_results()
