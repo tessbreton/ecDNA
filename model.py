@@ -274,7 +274,13 @@ class Population:
                     self.times = times
                     return times, cell_counts
 
-    def simulate_moran(self, size=1000, n_events=5e4, verbose=True, from_start=True, initial_cell_counts=None):
+    def simulate_moran(self, 
+                       size=1000, 
+                       n_events=5e4, 
+                       verbose=True, 
+                       from_start=True, 
+                       initial_cell_counts=None, 
+                       disable=False):
         """
         Simulate population evolution using Moran process
         If from_start, the simulation starts with 1 cell with ecDNA and size-1 cells without ecDNA.
@@ -304,7 +310,7 @@ class Population:
                 # fitness_by_key = {k: fitness of a cell with k copies of ecDNA}
 
                 #with tqdm(total=self.max_time, leave=False) as pbar:
-                with tqdm(total=n_events, leave=False) as pbar:
+                with tqdm(total=n_events, leave=False, disable=disable) as pbar:
                     pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")  # Dynamic update of simulation number
 
                     #while current_time < self.max_time:

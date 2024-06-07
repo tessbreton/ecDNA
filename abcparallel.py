@@ -2,17 +2,15 @@ import multiprocessing as mp
 from scipy.stats import wasserstein_distance
 import os, time, datetime
 import numpy as np
-from utils import standard_score, normalize_distribution, filter_distribution, load_yaml, save_yaml, get_save_folder, plot_histograms_avg
-from ecDNA import *
-from abcomputation import get_best_indices
+from utils import standard_score, normalize_distribution, filter_distribution, load_yaml, save_yaml, get_save_folder, plot_histograms_avg, get_best_indices
+from model import *
 
 class ABCInference:
-    def __init__(self, num_samples, fitness='log', size=1000, top_percent=5, synthetic=False):
+    def __init__(self, num_samples, expname, fitness='log', size=1000, top_percent=5, synthetic=False):
         self.num_samples = num_samples
         print('Number of samples:', num_samples)
         self.fitness = fitness
         self.size = size
-        self.run_folder = None
         self.top_percent = top_percent
 
         self.sampled_params = []
@@ -24,24 +22,39 @@ class ABCInference:
         self.threshold = 10
         self.synthetic = synthetic
 
-    def load_reference(self):
-        base_path = 'synthetic/' if self.synthetic else 'data/'
+        self.basepath = f'experiments/{expname}/'
+        self.run_folder = get_save_folder(self.basepath + 'runs/')
 
+    def load_reference(self):
         reference_files = {'P4': 'cell_counts_p4.yaml', 'P15': 'cell_counts_p15.yaml'}
-        self.reference_data = {key: filter_distribution(load_yaml(base_path + file), self.threshold)
+        self.reference_data = {key: filter_distribution(load_yaml(self.basepath + 'data/' + file), self.threshold)
                                for key, file in reference_files.items()}
         print(f'\nReference data filtered with threshold {self.threshold}.')
-        for key, file in reference_files.items():
-            print(key,':', base_path + file)
 
+        for key, file in reference_files.items(): print(key,':', self.basepath + 'data/' + file)
+
+    def sample_parameters(self):
+        raise NotImplementedError("This method should be implemented in a subclass")
+    
     def run_simulation(self):
         raise NotImplementedError("This method should be implemented in a subclass")
 
-    def calculate_distance(self):
-        raise NotImplementedError("This method should be implemented in a subclass")
-    
-    def sample_parameters(self):
-        raise NotImplementedError("This method should be implemented in a subclass")
+    def calculate_distance(self, simulated_data):
+        '''weighted sum of Wasserstein distances at P4 and P15'''
+        distances = {}
+        total_distance = 0
+        weights = {'P4':2, 'P15':0.5}
+        
+        for key in self.reference_data.keys():
+            reference_normalized = normalize_distribution(self.reference_data[key])
+            simulated_normalized = normalize_distribution(simulated_data[key])
+            values1, weights1 = zip(*reference_normalized.items())
+            values2, weights2 = zip(*simulated_normalized.items())
+            distance = float(wasserstein_distance(values1, values2, u_weights=weights1, v_weights=weights2))
+            distances[key] = distance
+            total_distance += weights[key] * distance
+
+        return total_distance, distances['P4'], distances['P15']
     
     def worker(self, num_samples):
         np.random.seed()  # Set a unique seed for each worker process
@@ -80,7 +93,7 @@ class ABCInference:
 
         print("Run complete.\n")
         print(f"Total samples collected: {len(self.sampled_params)}")
-        print(f"Total runtime: {str(datetime.timedelta(seconds=int(total_runtime)))}")
+        print(f"Total runtime: {str(datetime.timedelta(seconds=int(total_runtime)))}\n")
     
     def save_results(self, filename='results.yaml'):
         results = {
@@ -108,19 +121,13 @@ class ABCInference:
         self.top_params = top_params
         self.top_distances = top_distances
 
-        
-    def plot_results(self):
-        raise NotImplementedError("This method should be implemented in a subclass")
-
 
 class SelectionInference(ABCInference):
 
-    def __init__(self, s_range, num_samples, start=-5, fitness='log', size=1000):
-        super().__init__(num_samples=num_samples, fitness=fitness, size=size)
+    def __init__(self, s_range, num_samples, expname, start=-5, fitness='log', size=1000, synthetic=False):
+        super().__init__(num_samples=num_samples, fitness=fitness, size=size, synthetic=synthetic, expname=expname)
         self.s_range = s_range
         self.start = start
-        self.run_folder = get_save_folder(base_path='runs/selection/parallel')
-        self.distances = []
         self.sampled_s = []
         self.simulated_data_list_P4 = []
         self.simulated_data_list_P15 = []
@@ -143,23 +150,31 @@ class SelectionInference(ABCInference):
 
         return {'P4': population_P4, 'P15': population_P15}
 
-    def save_results(self, filename='results.yaml'):
-        results = {
-            'sampled_s': [params['s'] for params in self.sampled_params],
-            'simulated_data': self.simulated_data_list,
-            'distances': self.distances,
+    def save_results(self):
+        self.sampled_s = [params['s'] for params in self.sampled_params]
+
+        simulations = {
+            'P4': self.simulated_data_list_P4,
+            'P15': self.simulated_data_list_P15,
         }
-        save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, filename))
+        save_yaml(dictionary=simulations, file_path=os.path.join(self.run_folder, 'simulations.yaml'))
+
+        results = {
+            'sampled_s': self.sampled_s,
+            'distances': self.distances,
+            'distancesP4': self.distancesP4,
+            'distancesP15': self.distancesP15,
+            'num_samples': self.num_samples,
+        }
+        save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, 'results.yaml'))
     
 
 class DoubleInference(ABCInference):
 
-    def __init__(self, s_range, start_range, num_samples, fitness='log', size=1000, synthetic=False):
-        super().__init__(num_samples=num_samples, fitness=fitness, size=size, synthetic=synthetic)
+    def __init__(self, s_range, start_range, num_samples, expname, fitness='log', size=1000, synthetic=False):
+        super().__init__(num_samples=num_samples, fitness=fitness, size=size, synthetic=synthetic, expname=expname)
         self.s_range = s_range
         self.start_range = start_range
-        base_path = 'synthetic' if self.synthetic else 'data'
-        self.run_folder = get_save_folder(base_path='runs/double/'+base_path)
         self.simulated_data_list_P4 = []
         self.simulated_data_list_P15 = []
 
@@ -182,66 +197,42 @@ class DoubleInference(ABCInference):
         start = np.random.randint(*self.start_range)
         return {'s': s, 'start': start}
     
-    def calculate_distance(self, simulated_data):
-        '''weighted sum of Wasserstein distances at P4 and P15'''
-        distances = {}
-        total_distance = 0
-        weights = {'P4':2, 'P15':0.5}
-        
-        for key in self.reference_data.keys():
-            reference_normalized = normalize_distribution(self.reference_data[key])
-            simulated_normalized = normalize_distribution(simulated_data[key])
-            values1, weights1 = zip(*reference_normalized.items())
-            values2, weights2 = zip(*simulated_normalized.items())
-            distance = float(wasserstein_distance(values1, values2, u_weights=weights1, v_weights=weights2))
-            distances[key] = distance
-            total_distance += weights[key] * distance
-
-        return total_distance, distances['P4'], distances['P15']
-    
     def get_top_simulations(self):
         smallest_indices = get_best_indices(self.distances, self.top_percent)
 
         top_simulated_data_P4, top_simulated_data_P15 = [], []
+        top_distancesP4, top_distancesP15 = [], []
         top_s, top_start = [], []
         top_distances = []
 
         # use one single for loop
         for i in smallest_indices:
-            top_simulated_data_P4.append(self.simulated_data_list_P4[i])
+            top_simulated_data_P4.append(self.simulated_data_P4[i])
             top_simulated_data_P15.append(self.simulated_data_list_P15[i])
             top_s.append(self.sampled_s[i])
             top_start.append(self.sampled_start[i])
             top_distances.append(self.distances[i])
-
-        self.top_simulated_data = {'P4': top_simulated_data_P4, 'P15': top_simulated_data_P15}
-        self.top_s = top_s
-        self.top_start = top_start
-        self.top_distances = top_distances
+            top_distancesP4.append(self.distancesP4[i])
+            top_distancesP15.append(self.distancesP15[i])
 
     def save_results(self):
         self.sampled_s = [params['s'] for params in self.sampled_params]
         self.sampled_start = [params['start'] for params in self.sampled_params]
 
-        # Normalisation des deux listes de distances
-        normalized_distancesP4 = standard_score(self.distancesP4)
-        normalized_distancesP15 = standard_score(self.distancesP15)
+        simulations = {
+            'P4': self.simulated_data_list_P4,
+            'P15': self.simulated_data_list_P15,
+        }
+        save_yaml(dictionary=simulations, file_path=os.path.join(self.run_folder, 'simulations.yaml'))
 
-        # Combinaison des distances normalisées
-        standard_scores = [(d4 + d15) / 2 for d4, d15 in zip(normalized_distancesP4, normalized_distancesP15)]
-        
         results = {
             'sampled_s': self.sampled_s,
             'sampled_start': self.sampled_start,
-            'simulated_data_P4': self.simulated_data_list_P4,
-            'simulated_data_P15': self.simulated_data_list_P15,
             'distances': self.distances,
             'distancesP4': self.distancesP4,
             'distancesP15': self.distancesP15,
-            'standard_scores': standard_scores,
             'num_samples': self.num_samples,
         }
-
         save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, 'results.yaml'))
 
         # self.get_top_simulations()
@@ -262,11 +253,17 @@ class DoubleInference(ABCInference):
 
 
 # Sampling parameters for two parameters
-s_range = [0.015, 0.11]
-start_range = [-8, 1]
+expname = 'synthetic2'
+# expname = 'CAM277'
+s_range = [0.01, 0.11]
+start_range = [-9, 1]
 num_samples = 1000
+params = load_yaml(f'experiments/{expname}/data/params.yaml')
+start, sref = params['start'], params['s']
 
-abc_inference = DoubleInference(s_range, start_range, num_samples, synthetic=True)
+# abc_inference = DoubleInference(s_range=s_range, start_range=start_range, num_samples=num_samples, synthetic=True, expname=expname)
+abc_inference = SelectionInference(s_range=s_range, start=start, num_samples=num_samples, synthetic=True, expname=expname)
+
 abc_inference.load_reference()
 abc_inference.perform_inference()
 abc_inference.save_results()

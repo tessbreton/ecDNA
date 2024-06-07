@@ -4,7 +4,7 @@ from tqdm import tqdm
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from ecDNA import Population
+from model import Population
 
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
@@ -20,6 +20,7 @@ def plot_histograms_overlay(dfs:list,
                             plot_bgcolor='white',
                             bin_size=10,
                             save_fig=False,
+                            file_path=None,
                             width=1000,
                             height=500,
                             scale=5):  
@@ -43,7 +44,38 @@ def plot_histograms_overlay(dfs:list,
 
     if save_fig:
         fig.update_layout(width=width, height=height)
-        fig.write_image("data.png", scale=scale)
+        fig.write_image(file_path, scale=scale)
+        
+        
+def plot_histograms(data:list, binsize=10, opacity=None, colors=None, labels=None, title='', xaxis_title=''):
+    if opacity==None: opacity = [0.5]*len(data)
+    if colors==None: colors = ['blue']*len(data)
+    if labels==None: labels = ['']*len(data)
+
+    fig = go.Figure()
+    for x, op, color, label in zip(data, opacity, colors, labels):
+        hist = go.Histogram(
+            x=x,
+            xbins=dict(size=binsize),
+            opacity=op,
+            name=label,
+            marker=dict(color=color)
+        )
+        fig.add_trace(hist)
+
+    fig.update_layout(
+        title=title,
+        xaxis_title=xaxis_title,
+        yaxis_title='Count',
+        barmode='overlay',
+        bargap=0.2,
+        bargroupgap=0.1,
+        plot_bgcolor='white',
+        width=800,
+        height=500
+    )
+
+    fig.show()
 
 
 def trace_ecdf(data,
@@ -117,25 +149,26 @@ def plot_histogram_dict(dictionary,bin_size=5,
 
     fig.show()
 
-from scipy.stats import sem, t
 
 def plot_histograms_dict_overlay(dictionaries:list[dict], 
                                  true_data=None,
                                  bin_size=10,
-                                 title='Normalized distributions of ecDNA counts', 
+                                 title='', 
                                  xaxis_title='ecDNA counts', yaxis_title='Frequency',
-                                 labels=('Passage 4', 'Passage 15'),
-                                 colors=('violet', 'deepskyblue'),
-                                 opacity=(1, 0.5),
-                                 plot_avg=False, avg_color='red', avg_opacity=0.4,
-                                 confidence_level=5, CI_linecolor='orangered', CI_fillcolor='rgba(206, 255, 79, 0.2)',
+                                 labels=[''],
+                                 colors=[''],
+                                 opacity=[1],
+                                 plot_avg=False, avg_color='red',
+                                 confidence_level=5, CI_linecolor='orangered', CI_fillcolor='rgba(206, 255, 79, 0.3)',
                                  plot_all=True,
                                  plot_ref=False,
                                  true_label='Reference data',
                                  plot_bgcolor='white',
+                                 threshold=10,
                                  show=True,
-                                 save=False,filepath='histograms_overlay.png',
+                                 save=False,filepath='histograms_overlay.png', save_html=False,
                                  width=1000, height=500, scale=5,
+                                 histnorm='probability density'
                                  ):  
 
     fig = go.Figure()
@@ -151,26 +184,21 @@ def plot_histograms_dict_overlay(dictionaries:list[dict],
     if plot_all or plot_avg:
         for i, data in enumerate(data_list):
             if plot_avg:
-                hist, bins = np.histogram(data, bins=np.arange(0, max_data + bin_size, bin_size), density=True)
+                hist, bins = np.histogram(data, bins=np.arange(threshold, max_data + bin_size, bin_size), density=True)
                 histograms.append(hist)
             if plot_all:
                 label, color, op = labels[i], colors[i], opacity[i]
                 fig.add_trace(go.Histogram(x=data, name=label, marker_color=color, opacity=op, 
-                                            xbins=dict(size=bin_size), histnorm='probability density',marker_pattern_shape=""))
+                                            xbins=dict(size=bin_size), histnorm=histnorm,marker_pattern_shape=""))
         
     if plot_ref:
         true_data = [key for key, value in true_data.items() for _ in range(value)]
         fig.add_trace(go.Histogram(x=true_data, name=true_label, marker_color='palegreen', opacity=0.7, 
-                                    xbins=dict(size=bin_size), histnorm='probability density',marker_pattern_shape=""))
+                                    xbins=dict(size=bin_size), histnorm=histnorm, marker_pattern_shape=""))
     
     if plot_avg:
         avg_hist = np.mean(histograms, axis=0)
-        bin_centers = (bins[:-1] + bins[1:]) / 2 - 0.5
-        # Define hover text with bin ranges
-        hover_text = [f'({bins[i]:.0f} - {bins[i+1]-1:.0f})' for i in range(len(bins) - 1)]
-        hoverinfo = 'text+y'
-        # fig.add_trace(go.Bar(x=bin_centers, y=avg_hist, name='Average simulations histogram', marker_color=avg_color, opacity=avg_opacity, marker_pattern_shape='x',hoverinfo=hoverinfo, hovertext=hover_text))
-
+        
         # Compute percentiles for confidence interval
         lower_percentile = confidence_level
         upper_percentile = 100 - confidence_level
@@ -211,6 +239,20 @@ def plot_histograms_dict_overlay(dictionaries:list[dict],
     if save:
         fig.update_layout(width=width, height=height)
         fig.write_image(filepath, scale=scale)
+
+    if save_html:
+        html_filepath = filepath.replace('.png', '.html')
+        fig.write_html(html_filepath)
+
+
+def plot_histograms_avg(dictionaries, reference_data, reference_label, title, filepath):
+    
+    plot_histograms_dict_overlay(
+            dictionaries=dictionaries, true_data=reference_data, bin_size=10,
+            plot_ref=True, true_label=reference_label, title=title,
+            plot_avg=True, confidence_level=5, show=False, save=True, plot_all=False,
+            filepath=filepath
+        )
 
 
 def plot_histogramm(cell_counts, 
@@ -298,6 +340,158 @@ def plot_ecdf(df,
     )
 
     fig.show()
+
+def scatter_joint_marginal(x, y, xlabel, ylabel, title='', info=None, infolabel=None,
+                           show=True, save=False, filepath=None, width=600, height=600, scale=3, add_ref=False, xref=None, yref=None):
+    if info is not None:
+        hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}, {infolabel}: {info[i]:.2f}" for i in range(len(x))]
+    else: 
+        hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}" for i in range(len(x))]
+
+    # Create the scatter plot with updated marker and labels
+    scatter = go.Scatter(
+        x=x,
+        y=y,
+        mode='markers',
+        marker=dict(size=7, color='deepskyblue'),
+        text=hover_text,
+        hoverinfo='text',
+        showlegend=False,
+    )
+
+    # Create the x histogram
+    hist_x = go.Histogram(
+        x=x,
+        nbinsx=40,
+        marker=dict(color='navy'),
+        showlegend=False,
+        yaxis='y2'
+    )
+
+    # Create the y histogram
+    hist_y = go.Histogram(
+        y=y,
+        nbinsy=40,
+        marker=dict(color='coral'),
+        showlegend=False,
+        xaxis='x2',
+    )
+
+    if add_ref:
+        # Create the big red point
+        big_red_point = go.Scatter(
+            x=[xref],
+            y=[yref],
+            mode='markers',
+            marker=dict(size=12, color='red'),
+            name='Reference Parameters',
+            showlegend=True,
+        )
+
+    # Create the layout with grid specs and updated background color
+    layout = go.Layout(
+        title=title,
+        width=width,
+        height=height,
+        xaxis=dict(
+            title=xlabel,  # Label for the x-axis
+            domain=[0.0, 0.85],
+            showgrid=False,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=ylabel,  # Label for the y-axis
+            domain=[0.0, 0.85],
+            showgrid=False,
+            zeroline=False
+        ),
+        xaxis2=dict(
+            domain=[0.85, 1.0],
+            showgrid=False,
+            zeroline=False
+        ),
+        yaxis2=dict(
+            domain=[0.85, 1.0],
+            showgrid=False,
+            zeroline=False
+        ),
+        plot_bgcolor='white',  # Change background color
+        paper_bgcolor='white',  # Change the outer background color
+        bargap=0,
+        hovermode='closest'
+    )
+
+    # Combine the plots
+    if add_ref: fig = go.Figure(data=[scatter, hist_x, hist_y, big_red_point], layout=layout)
+    else : fig = go.Figure(data=[scatter, hist_x, hist_y], layout=layout)
+
+    # Show figure
+    if show: 
+        fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+def plot_histograms_grouped(x, y, xlabel, ylabel, title='', show=True, save=False, width=500, height=700, scale=3, filepath=None):
+    unique_y_values = sorted(set(y))  # Get unique values of y
+    num_y_values = len(unique_y_values)
+
+    # Calculate total height for the figure
+    total_height = 200 + 100 * num_y_values
+
+    # Create subplot grid with shared y axes
+    fig = make_subplots(
+        rows=num_y_values, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        subplot_titles=[f"starting at P{val}" for val in unique_y_values],
+        row_heights=[100] * num_y_values  # Adjust height of each subplot
+    )
+
+    # Loop through unique y values
+    for i, val in enumerate(unique_y_values, start=1):
+        # Filter x values corresponding to current y value
+        filtered_x = [x[j] for j in range(len(y)) if y[j] == val]
+
+        # Create histogram for filtered x values
+        hist_x = go.Histogram(
+            x=filtered_x,
+            name=f'{ylabel} = {val}',
+            showlegend=False
+        )
+
+        # Add histogram to subplot
+        fig.add_trace(hist_x, row=i, col=1)
+
+    # Update layout
+    fig.update_layout(
+        title=title,
+        bargap=0.1,
+        height=total_height  # Set total height of the figure
+    )
+
+    # Share y axes
+    for i in range(2, num_y_values + 1):
+        fig.update_yaxes(matches='y', row=i, col=1)
+
+    # Show x axis on each histogram
+    for i in range(1, num_y_values + 1):
+        fig.update_xaxes(showticklabels=True, row=i, col=1)
+
+    # Set x axis label on the last subplot
+    fig.update_xaxes(title=xlabel, row=num_y_values, col=1)
+
+    if show: fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=total_height)
+        fig.write_image(filepath, scale=scale)
+
+
+# plot evolution
 
 
 def get_boundaries(group_limits, df):
@@ -417,18 +611,22 @@ import yaml
 import os
 
 def save_yaml(dictionary, file_path):
+    # Crée les répertoires nécessaires si ce n'est pas déjà fait
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # Sauvegarde le dictionnaire dans un fichier YAML
     with open(file_path, "w") as yaml_file:
         yaml.dump(dictionary, yaml_file)
+    
     print('Dictionary saved as yaml file to', file_path)
 
-def get_save_folder(base_path='runs'):
+def get_save_folder(path='runs'):
     index = 1
     while True:
-        result_folder = os.path.join(base_path, f"run{index}")
+        result_folder = os.path.join(path, f"run{index}")
         
         if not os.path.exists(result_folder):
             os.makedirs(result_folder)
-            os.makedirs(result_folder+'/plots')
             return result_folder
         
         index += 1
@@ -440,3 +638,124 @@ def load_yaml(file_path):
     return loaded_dict
 
 
+
+
+def normalize_distribution(distribution:dict):
+    total_count = sum(distribution.values())
+    return {k: v / total_count for k, v in distribution.items()}
+
+def filter_distribution(distribution, threshold):
+    return {k: v for k, v in distribution.items() if k >= threshold}
+
+def filter_and_normalize(distribution, threshold=10):
+    return normalize_distribution(filter_distribution(distribution, threshold))
+
+def standard_score(distances):
+    mean = float(np.mean(distances))
+    std = float(np.std(distances))
+    return [(d - mean) / std for d in distances]
+
+
+from math import ceil 
+
+def get_best_indices(distances, top_percent):
+    '''Find indices corresponding to {top_percent}% smallest distances'''
+    num_points = len(distances)
+    num_smallest_points = ceil(0.01 * top_percent * num_points)
+    smallest_indices = np.argsort(distances)[:num_smallest_points]
+    smallest_indices = smallest_indices.tolist()
+    return smallest_indices
+
+
+
+
+def plot_best_points_util(s_values, 
+                     distances, 
+                     metric,
+                     filepath=None,
+                     top_percent=5, 
+                     best_color='turquoise',
+                     show=True,
+                     save=False, width=700, height=400, scale=3):
+    
+    fig = go.Figure()  # Initialize the figure
+
+    # Get indices of the best points (smallest distances)
+    smallest_indices = get_best_indices(distances, top_percent)
+    
+    fig.add_trace(go.Scatter(
+        x=s_values,
+        y=distances,
+        mode='markers',
+        marker=dict(color='black', size=5),
+        name='All points'
+    ))
+
+    # Plot points corresponding to 5% smallest distances in blue
+    fig.add_trace(go.Scatter(
+        x=np.array(s_values)[smallest_indices],
+        y=np.array(distances)[smallest_indices],
+        mode='markers',
+        marker=dict(color=best_color, size=8),
+        name=f'{top_percent}% smallest distances'
+    ))
+
+    # Update layout
+    fig.update_layout(
+        xaxis_title='s',
+        yaxis_title='Distance',
+        plot_bgcolor='white'
+    )
+    fig.update_traces(hovertemplate='s: %{x:.3f}<br>'+metric+' distance: %{y:.1f}')  # Utilisez '.2f' pour afficher 2 décimales
+
+    if show: fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)
+
+
+def plot_posterior_util(s_values, 
+                   distances, 
+                   top_percent=5, 
+                   plot_color='lightskyblue',
+                   show=True,
+                   save=False, filepath=None,
+                   add_ref=False, sref=None, 
+                   width=700, height=400, scale=5):   
+    
+    smallest_indices = get_best_indices(distances, top_percent)
+    top_s_values = np.array(s_values)[smallest_indices].tolist()
+    
+    mean_s_value = np.mean(top_s_values)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=s_values, name=f'sampled', marker_color=plot_color, opacity=0.5, 
+                                        xbins=dict(size=0.005), histnorm='probability density',marker_pattern_shape=""))
+    fig.add_trace(go.Histogram(x=top_s_values, name=f'top {top_percent}%', marker_color='#1ADCBE', opacity=0.5, 
+                                        xbins=dict(size=0.005), histnorm='probability density',marker_pattern_shape=""))
+    if add_ref:
+        # fig.add_vline(x=sref, line=dict(color='blue', width=2), 
+        #               annotation_text=f'Reference: {sref:.5f}',
+        #               annotation_position="top", annotation=dict(font=dict(color='blue')))
+        fig.add_vline(x=sref, line=dict(color='blue', width=2))     
+    # Add a vertical line at the mean value
+    # fig.add_vline(x=mean_s_value, line=dict(color='red', width=2, dash='dash'), annotation_text=f'Mean: {mean_s_value:.5f}', 
+    #               annotation_position="top", annotation=dict(font=dict(color='red')))
+    fig.add_vline(x=mean_s_value, line=dict(color='red', width=2, dash='dash'))
+    
+    fig.update_layout(
+        title=f'Posterior distribution of selection parameter s ({top_percent}% best over {len(s_values)} samples)',
+        xaxis_title='s values',
+        yaxis_title='Count',
+        barmode='overlay',
+        bargap=0,
+        plot_bgcolor='white'
+    )
+    
+    if show: 
+        fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)

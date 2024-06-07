@@ -8,7 +8,4 @@
 
 module load anaconda
 
-#Command to execute Python program
 python abcparallel.py
- 
-#End of script
