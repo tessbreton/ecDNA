@@ -562,7 +562,7 @@ def plot_evolution_area_multiple(df,
 
 def plot_mean_CN_multi_simulations(n_simulations, 
                                    filepath='meanmultiple.png',
-                                   max_time=100, 
+                                   n_events=1000, 
                                    fitness='log', 
                                    s=0.1, 
                                    size=1000, 
@@ -575,8 +575,8 @@ def plot_mean_CN_multi_simulations(n_simulations,
 
     for i in tqdm(range(n_simulations)):
         # Run simulation
-        population = Population(max_time=max_time, fitness=fitness, s=s)
-        population.simulate_moran(size=size, verbose=False)
+        population = Population(fitness=fitness, s=s)
+        population.simulate_moran(size=size, n_events=n_events, verbose=False)
 
         # Get mean ecDNA copy numbers for each time
         mean_ecDNA_copy_numbers = [population.get_mean(time_index=i) for i in range(len(population.times))]
@@ -588,7 +588,7 @@ def plot_mean_CN_multi_simulations(n_simulations,
                                  name=f'Simulation {i+1}'))
 
     fig.update_layout(
-        title=f'Mean ecDNA copy number over time on {n_simulations} simulations'+ f" with {population.model} model and {fitness} fitness function (s={s})",
+        title=f'Mean ecDNA copy number on {n_simulations} simulations'+ f" with {population.model} model and {fitness} fitness function (s={s})",
         xaxis=dict(title='Time'),
         yaxis=dict(title='Mean ecDNA copy number'),
         plot_bgcolor=plot_bgcolor,
@@ -671,7 +671,7 @@ def get_best_indices(distances, top_percent):
 
 def plot_best_points_util(s_values, 
                      distances, 
-                     metric,
+                     metric='Wasserstein',
                      filepath=None,
                      top_percent=5, 
                      best_color='turquoise',
@@ -715,39 +715,59 @@ def plot_best_points_util(s_values,
         fig.write_image(filepath, scale=scale)
 
 
+import numpy as np
+import plotly.graph_objects as go
+
 def plot_posterior_util(s_values, 
-                   distances, 
-                   top_percent=5, 
-                   plot_color='lightskyblue',
-                   show=True,
-                   save=False, filepath=None,
-                   add_ref=False, sref=None, 
-                   width=700, height=400, scale=5):   
+                        distances, 
+                        top_percent=5, 
+                        plot_color='lightskyblue',
+                        show=True,
+                        save=False, 
+                        filepath=None,
+                        add_ref=False, 
+                        sref=None, 
+                        width=700, 
+                        height=400, 
+                        scale=5):   
     
     smallest_indices = get_best_indices(distances, top_percent)
     top_s_values = np.array(s_values)[smallest_indices].tolist()
     
     mean_s_value = np.mean(top_s_values)
+    median_s_value = np.median(top_s_values)
     
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=s_values, name=f'sampled', marker_color=plot_color, opacity=0.5, 
-                                        xbins=dict(size=0.005), histnorm='probability density',marker_pattern_shape=""))
-    fig.add_trace(go.Histogram(x=top_s_values, name=f'top {top_percent}%', marker_color='#1ADCBE', opacity=0.5, 
-                                        xbins=dict(size=0.005), histnorm='probability density',marker_pattern_shape=""))
+    fig.add_trace(go.Histogram(x=s_values, name='Sampled', marker_color=plot_color, opacity=0.5, 
+                               xbins=dict(size=0.005), histnorm='probability density', marker_pattern_shape=""))
+    fig.add_trace(go.Histogram(x=top_s_values, name=f'Top {top_percent}%', marker_color='#1ADCBE', opacity=0.5, 
+                               xbins=dict(size=0.005), histnorm='probability density', marker_pattern_shape=""))
+    
     if add_ref:
-        # fig.add_vline(x=sref, line=dict(color='blue', width=2), 
-        #               annotation_text=f'Reference: {sref:.5f}',
-        #               annotation_position="top", annotation=dict(font=dict(color='blue')))
-        fig.add_vline(x=sref, line=dict(color='blue', width=2))     
-    # Add a vertical line at the mean value
-    # fig.add_vline(x=mean_s_value, line=dict(color='red', width=2, dash='dash'), annotation_text=f'Mean: {mean_s_value:.5f}', 
-    #               annotation_position="top", annotation=dict(font=dict(color='red')))
+        # Add a phantom legend for the reference vertical line
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='black', width=2), 
+                                    name=f'reference: {sref:.3f}'))
+        # Add the reference vertical line
+        fig.add_vline(x=sref, line=dict(color='black', width=2))
+    
+
+    # Add a phantom legend for the mean vertical line
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='red', width=2, dash='dash'), 
+                                name=f'average: {mean_s_value:.3f}'))
+    # Add the mean vertical line
     fig.add_vline(x=mean_s_value, line=dict(color='red', width=2, dash='dash'))
+
+    # Add a phantom legend for the median vertical line
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='blue', width=2, dash='dot'), 
+                                name=f'median: {median_s_value:.3f}'))
+    # Add the median vertical line
+    fig.add_vline(x=median_s_value, line=dict(color='blue', width=2, dash='dot'))
+    
     
     fig.update_layout(
         title=f'Posterior distribution of selection parameter s ({top_percent}% best over {len(s_values)} samples)',
         xaxis_title='s values',
-        yaxis_title='Count',
+        yaxis_title='Frequency',
         barmode='overlay',
         bargap=0,
         plot_bgcolor='white'
@@ -759,3 +779,33 @@ def plot_posterior_util(s_values,
     if save:
         fig.update_layout(width=width, height=height)
         fig.write_image(filepath, scale=scale)
+
+
+
+
+def plot_scatter_with_gradient(distances, distancesP15, s_values):
+    # Créer le scatter plot
+    fig = go.Figure(data=go.Scatter(
+        x=distances,
+        y=distancesP15,
+        mode='markers',
+        marker=dict(
+            color=s_values,  # Utiliser s_values pour les couleurs
+            colorscale='Plotly3',  # Choisir un gradient de couleur
+            colorbar=dict(title='s'),  # Ajouter une barre de couleur
+            showscale=True,
+            size=10,
+
+        )
+    ))
+    
+    # Mettre à jour les axes et le layout
+    fig.update_layout(
+        xaxis_title=f'Distance at P4, starting with one cell with 1 copy at P{start}',
+        yaxis_title='Distance at P15, starting from reference at P4',
+        title=f'Scatter Plot - Wasserstein distance at P15 (starting from P4) VS at P4 (starting from P{start})',
+        plot_bgcolor='white'
+    )
+    
+    # Afficher le plot
+    fig.show()

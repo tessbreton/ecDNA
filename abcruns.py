@@ -1,8 +1,8 @@
 import multiprocessing as mp
 from scipy.stats import wasserstein_distance
-import os, time, datetime
+import os, time, datetime, argparse
 import numpy as np
-from utils import standard_score, normalize_distribution, filter_distribution, load_yaml, save_yaml, get_save_folder, plot_histograms_avg, get_best_indices
+from utils import normalize_distribution, filter_distribution, load_yaml, save_yaml, get_save_folder, get_best_indices
 from model import *
 
 class ABCInference:
@@ -96,30 +96,8 @@ class ABCInference:
         print(f"Total runtime: {str(datetime.timedelta(seconds=int(total_runtime)))}\n")
     
     def save_results(self, filename='results.yaml'):
-        results = {
-            'sampled_params': self.sampled_params,
-            'simulated_data': self.simulated_data_list,
-            'distances': self.distances,
-        }
+        results = {'sampled_params': self.sampled_params, 'simulated_data': self.simulated_data_list,'distances': self.distances}
         save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, filename))
-
-    def get_top_simulations(self):
-        smallest_indices = get_best_indices(self.distances, self.top_percent)
-
-        top_simulated_data_P4, top_simulated_data_P15 = [], []
-        top_params = []
-        top_distances = []
-
-        # use one single for loop
-        for i in smallest_indices:
-            top_simulated_data_P4.append(self.simulated_data_list_P4[i])
-            top_simulated_data_P15.append(self.simulated_data_list_P15[i])
-            top_params.append(self.sampled_params[i])
-            top_distances.append(self.distances[i])
-
-        self.top_simulated_data = {'P4': top_simulated_data_P4, 'P15': top_simulated_data_P15}
-        self.top_params = top_params
-        self.top_distances = top_distances
 
 
 class SelectionInference(ABCInference):
@@ -153,10 +131,7 @@ class SelectionInference(ABCInference):
     def save_results(self):
         self.sampled_s = [params['s'] for params in self.sampled_params]
 
-        simulations = {
-            'P4': self.simulated_data_list_P4,
-            'P15': self.simulated_data_list_P15,
-        }
+        simulations = {'P4': self.simulated_data_list_P4, 'P15': self.simulated_data_list_P15}
         save_yaml(dictionary=simulations, file_path=os.path.join(self.run_folder, 'simulations.yaml'))
 
         results = {
@@ -196,33 +171,12 @@ class DoubleInference(ABCInference):
         s = np.random.uniform(*self.s_range)
         start = np.random.randint(*self.start_range)
         return {'s': s, 'start': start}
-    
-    def get_top_simulations(self):
-        smallest_indices = get_best_indices(self.distances, self.top_percent)
-
-        top_simulated_data_P4, top_simulated_data_P15 = [], []
-        top_distancesP4, top_distancesP15 = [], []
-        top_s, top_start = [], []
-        top_distances = []
-
-        # use one single for loop
-        for i in smallest_indices:
-            top_simulated_data_P4.append(self.simulated_data_P4[i])
-            top_simulated_data_P15.append(self.simulated_data_list_P15[i])
-            top_s.append(self.sampled_s[i])
-            top_start.append(self.sampled_start[i])
-            top_distances.append(self.distances[i])
-            top_distancesP4.append(self.distancesP4[i])
-            top_distancesP15.append(self.distancesP15[i])
 
     def save_results(self):
         self.sampled_s = [params['s'] for params in self.sampled_params]
         self.sampled_start = [params['start'] for params in self.sampled_params]
 
-        simulations = {
-            'P4': self.simulated_data_list_P4,
-            'P15': self.simulated_data_list_P15,
-        }
+        simulations = {'P4': self.simulated_data_list_P4, 'P15': self.simulated_data_list_P15}
         save_yaml(dictionary=simulations, file_path=os.path.join(self.run_folder, 'simulations.yaml'))
 
         results = {
@@ -235,36 +189,28 @@ class DoubleInference(ABCInference):
         }
         save_yaml(dictionary=results, file_path=os.path.join(self.run_folder, 'results.yaml'))
 
-        # self.get_top_simulations()
-        # top_results = {'top_simulated_data': self.top_simulated_data,
-        #                         'top_s': self.top_s,
-        #                         'top_start': self.top_start,
-        #                         'num_samples': self.num_samples,
-        #                         'top_distances': self.top_distances}
-        # save_yaml(dictionary=top_results,
-        #           file_path=os.path.join(self.run_folder, 'topresults.yaml'))
 
-    def plot_results(self):
-        # plot average of {top_percent}% best simulations
-        for P in self.reference_data.keys():
-            title = f'ecDNA counts at {P} and {self.top_percent}% best simulations (over {self.num_samples} samples)'
-            reference_label = f'Reference data ({P})'
-            plot_histograms_avg(self.top_simulated_data[P], self.reference_data[P], reference_label, title, filepath=os.path.join(self.run_folder, 'plots', f'average{P}.png'))
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Run ABC Inference')
+    parser.add_argument('--expname', type=str, required=True, help='Name of the experiment. There must be a folder with this name in experiments/.')
+    parser.add_argument('--inference', type=str, required=True, choices=['selection', 'double'], 
+                        help='Type of inference. double to infer both the selection parameter and the starting passage, simple to infer only the selection parameter given the starting passage.')
 
+    args = parser.parse_args()
+    expname = args.expname
+    inference = args.inference
 
-# Sampling parameters for two parameters
-expname = 'synthetic2'
-# expname = 'CAM277'
-s_range = [0.01, 0.11]
-start_range = [-9, 1]
-num_samples = 1000
-params = load_yaml(f'experiments/{expname}/data/params.yaml')
-start, sref = params['start'], params['s']
+    s_range = [0.01, 0.11]
+    start_range = [-9, 1]
+    num_samples = 1000
+    params = load_yaml(f'experiments/{expname}/data/params.yaml')
+    start, sref = params['start'], params['s']
 
-# abc_inference = DoubleInference(s_range=s_range, start_range=start_range, num_samples=num_samples, synthetic=True, expname=expname)
-abc_inference = SelectionInference(s_range=s_range, start=start, num_samples=num_samples, synthetic=True, expname=expname)
+    if inference == 'selection':
+        abc_inference = SelectionInference(s_range=s_range, start=start, num_samples=num_samples, synthetic=True, expname=expname)
+    elif inference == 'double':
+        abc_inference = DoubleInference(s_range=s_range, start_range=start_range, num_samples=num_samples, synthetic=True, expname=expname)
 
-abc_inference.load_reference()
-abc_inference.perform_inference()
-abc_inference.save_results()
-# abc_inference.plot_results()
+    abc_inference.load_reference()
+    abc_inference.perform_inference()
+    abc_inference.save_results()

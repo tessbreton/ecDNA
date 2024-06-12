@@ -8,4 +8,4 @@
 
 module load anaconda
 
-python abcparallel.py
+python abcruns.py --expname synthetic1double --inference double

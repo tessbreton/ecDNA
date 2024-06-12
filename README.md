@@ -11,3 +11,8 @@ pip install --upgrade nbformat
 ```
 
 and then **restart VSCode** completely. This should solve the issue.
+
+## Running ABC inference
+```bash
+sbatch abcparallel.py --expname CAM277 --inference selection
+```
