@@ -13,44 +13,34 @@ def main(expname, inference):
     params = load_yaml(paths['data']+'params.yaml')
     start, sref = params['start'], params['s']
 
-    distances = []
-    distancesP4 = []
-    distancesP15 = []
+    distances, distancesP4, distancesP15 = [], [], []
+    sampled_s, sampled_start = [], []
 
-    sampled_s = []
-    if inference=='double': sampled_start = []
-
-    simulated_data_P4 = []
-    simulated_data_P15 = []
-
+    simulated_data_P4, simulated_data_P15 = [], []
     num_samples = 0
 
     for run_folder in tqdm(os.listdir(paths['runs'])):
         run_path = os.path.join(paths['runs'], run_folder)
         
-        if os.path.isdir(run_path):
-            results_file_path = os.path.join(run_path, 'results.yaml')
-            
-            if os.path.isfile(results_file_path):
+        results_file_path = os.path.join(run_path, 'results.yaml')
+        
+        if os.path.isfile(results_file_path):
 
-                print('loading results')
-                print(results_file_path)
-                results = load_yaml(results_file_path)
-                print('results loaded')
-                simulations = load_yaml(os.path.join(run_path, 'simulations.yaml'))
-                print('simulations loaded')
+            print('loading results from', results_file_path)
+            results = load_yaml(results_file_path)
+            simulations = load_yaml(os.path.join(run_path, 'simulations.yaml'))
 
-                num_samples += results['num_samples']
+            num_samples += results['num_samples']
 
-                sampled_s.extend(results['sampled_s'])
-                if inference=='double': sampled_start.extend(results['sampled_start'])
+            sampled_s.extend(results['sampled_s'])
+            if inference=='double': sampled_start.extend(results['sampled_start'])
 
-                distances.extend(results['distances'])
-                distancesP4.extend(results['distancesP4'])
-                distancesP15.extend(results['distancesP15'])
+            distances.extend(results['distances'])
+            distancesP4.extend(results['distancesP4'])
+            distancesP15.extend(results['distancesP15'])
 
-                simulated_data_P4.extend(simulations['P4'])
-                simulated_data_P15.extend(simulations['P15'])
+            simulated_data_P4.extend(simulations['P4'])
+            simulated_data_P15.extend(simulations['P15'])
 
     referenceP4 = filter_distribution(load_yaml(exp_dir+'data/cell_counts_p4.yaml'), 10)
     referenceP15 = filter_distribution(load_yaml(exp_dir+'data/cell_counts_p15.yaml'), 10)
@@ -81,9 +71,8 @@ def main(expname, inference):
     smallest_indices = get_best_indices(distances, top_percent)
 
     top_simulated_data_P4, top_simulated_data_P15 = [], []
-    top_distancesP4, top_distancesP15 = [], []
+    top_distances, top_distancesP4, top_distancesP15 = [], [], []
     top_s, top_start = [], []
-    top_distances = []
 
     # use one single for loop
     for i in smallest_indices:
@@ -100,7 +89,7 @@ def main(expname, inference):
     plot_histograms_dict_overlay(
         dictionaries=[top_simulated_data_P4[0]], plot_ref=True, true_data=referenceP4,
         labels=['Simulation'], colors=['turquoise'],
-        title=f'ecDNA counts at passage 4 and simulation with {fitness} fitness (s={top_s[0]:.3f}, start P{start}, score={top_distances[0]:.1f})',
+        title=f'ecDNA counts at passage 4 and simulation with {fitness} fitness (s={top_s[0]:.3f}, start P{start}, distance={top_distances[0]:.1f})',
         save=True, show=False, filepath=paths['plots']+'bestsimulationp4.png')
 
     plot_histograms_dict_overlay(
@@ -160,7 +149,6 @@ def main(expname, inference):
         'num_samples': num_samples}
     if inference=='double': results['sampled_start'] = sampled_start
 
-
     print('\nSaving top results...')
     save_yaml(dictionary=top_results, file_path=paths['results']+'topresults.yaml')
 
@@ -174,6 +162,7 @@ def main(expname, inference):
     save_yaml(dictionary=results, file_path=paths['results']+'results.yaml')
 
 
+# MAIN --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process abc runs.')
     parser.add_argument('--expname', type=str, required=True, help='Name of the experiment. There must be a folder with this name in experiments/, and at least one run in runs/.')

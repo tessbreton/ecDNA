@@ -5,27 +5,20 @@ import pandas as pd
 import plotly.graph_objects as go
 import argparse
 
-colors = {'ecDNA': 'lightgrey', 'neutral': 'dodgerblue'}
 
+# UTILS --------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# utils
 def binomial_segregation(n, p=0.5):
-    """
-    Randomly segregate ecDNA copies to daughter cells using binomial distribution.
-    """
+    """Randomly segregate ecDNA copies to daughter cells using binomial distribution."""
     k = np.random.binomial(n,p)
     return k, n-k
 
 def compute_time_to_next_event(rate):
-    """
-    Calculate time to next event based on the rate for Gillespie algorithm.
-    """
+    """Calculate time to next event based on the rate for Gillespie algorithm."""
     return -1 / rate * np.log(np.random.uniform(0, 1))
 
 
-
-
-# class Population -----------------------------------------------------------------------------------------------
+# CLASS Population TO TRACK EVOLUTION ------------------------------------------------------------------------------------------------------------------------
 
 class Population:
 
@@ -40,6 +33,7 @@ class Population:
                  fitness='linear'):
 
         self.population = {0:initial_nb_without, 1:1}
+        # self.population = {k: number of cells with k copies of ecDNA}
 
         self.turnover = turnover
         self.max_cells = max_cells
@@ -54,14 +48,11 @@ class Population:
         self.fitness_by_key = {}
 
 
-    # simulation utils
+    # SIMULATION UTILS ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
     def cell_division(self, key):
-        """
-        Perform cell division on a cell with 'key' copies of ecDNA and update population accordingly.
-        """
         if key == 0: 
             self.population[0] += 1
-        
         else: 
             n = 2 * key
             k = np.random.binomial(n, 0.5)
@@ -73,34 +64,18 @@ class Population:
             self.population[key] -= 1
 
     def cell_death(self, key):
-        """
-        Remove a cell with 'key' copies of ecDNA from the population. 
-        Assumes that there is at least one cell with 'key' copies in the population.
-        """
         self.population[key] -= 1
 
     def random_cell_division(self, cell_division_type):
-        # implement algorithm from [4] : different rates for cells with and without ecDNA (no matter the CN)
-        """
-        Perform cell division on a random cell of the selected type and update population accordingly.
-        """
         if cell_division_type == 'zero':
-            # DIVISION OF A CELL WITH NO ecDNA
             self.cell_division(0)
 
         elif cell_division_type == 'with_ecDNA':
-            # DIVISION OF A CELL WITH ecDNA
-
             ecDNA_keys = [key for key in self.population.keys() if key != 0 and self.population[key] != 0]
 
-            # pick a random cell uniformly among all cells with ecDNA
+            # Pick a random cell uniformly among all cells with ecDNA
             counts = [self.population[key] for key in ecDNA_keys]
             key = np.random.choice(ecDNA_keys, p=counts/np.sum(counts))
-
-            # # Use keys as weights (weights increase with the key)
-            # weights = np.array([(1+0.1*key) * count for key, count in zip(ecDNA_keys, counts)])
-            # weights = weights / np.sum(weights)
-            # key = np.random.choice(ecDNA_keys, p=weights)
 
             self.cell_division(key)
 
@@ -108,27 +83,17 @@ class Population:
             raise ValueError("Invalid cell division type. Supported types are 'zero' and 'with_ecDNA'.")
 
     def logistic_growth(self, t, x0=3, k=0.1):
-        """
-        Logistic growth model for cell population.
-        """
         L = self.max_cells
         return L / (1 + np.exp(-k * (t-x0)))
     
     def constant_growth(self, t):
-        """
-        Constant growth model for cell population.
-        """
         return self.target_size
     
     def feedback(self, t, input_dynamic):
-        """
-        Feedback loop for cell division probability.
-        Formula from CINner supplementary.
-        """
+        """Feedback loop for cell division probability. Formula from CINner supplementary."""
         p_bar = input_dynamic(t)
         p = sum(self.population.values())
         g = p_bar / (p_bar + p)
-
         return g
     
     def cell_fitness(self, key):
@@ -137,30 +102,17 @@ class Population:
         elif self.fitness == 'log': return 1 + self.s * np.log(1+key)
         elif self.fitness == 'loglog': return 1 + self.s * np.log(1+np.log(1+key))
         elif self.fitness == 'constant': return 1
-        else: print('Fitness function not defined. Use power, linear or log.')
+        else: print('Fitness function not defined.')
     
     def relative_fitness(self, key):
-        """
-        Fitness function for cell division probability.
-        """
         average_fitness = sum(self.cell_fitness(key) * self.population[key] for key in self.population.keys()) / sum(self.population.values())
         cell_fitness = self.cell_fitness(key)
-        # if sum(self.population.values()) < 800:
-        #     print('avg fitness:', average_fitness,' / cell fitness:', cell_fitness)
         return cell_fitness / average_fitness
     
     def division_probability(self, key, growth, current_time=0):
-        """
-        Compute the probability of cell division for a cell with 'key' copies of ecDNA.
-        """
         if growth=='constant':
             g = self.feedback(t=current_time, input_dynamic=self.constant_growth)
             f = self.relative_fitness(key)
-
-            # if sum(self.population.values()) < 800:
-                # print('key:', key, 'g:', g, 'f:', f)
-                # print('division prob', g*f, f'\n')
-
             return g * f
 
         elif growth=='logistic':
@@ -202,7 +154,8 @@ class Population:
         return time_to_next_event, cell_division_type
 
 
-    # simulation algorithms
+    # SIMULATION ALGORITHMS ------------------------------------------------------------------------------------------------------------------------------------------------------------
+
     def simulate_feedback(self, verbose=True):
         """
         Simulate population dynamics using CINner feedback loop to follow input growth dynamic.
@@ -215,30 +168,26 @@ class Population:
         while True:
 
             while True:
-
                 self.population = {0: self.initial_nb_without, 1: 1}
-
                 current_time = 0
                 cell_counts = [self.population.copy()]
                 times = [current_time]
 
                 with tqdm(total=self.max_time, leave=False) as pbar:
-                    pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")  # Mise à jour dynamique du numéro de simulation échouée
+                    pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")
 
                     while (sum(self.population.values())) > 0 and current_time < self.max_time:
-                        # compute time to next event
+                        # Compute time to next event
                         total_cell_count = sum(self.population.values())
                         rate = total_cell_count * 1 / self.turnover
                         time_to_next_event = compute_time_to_next_event(rate)
 
-                        # choose a random cell in the population to undergo the event
+                        # Choose a random cell in the population to undergo the event
                         ecDNA_counts = list(self.population.keys())
                         weights = list(self.population.values())
                         random_key = np.random.choice(ecDNA_counts, p=weights/np.sum(weights))
 
-                        prob = self.division_probability(key=random_key,
-                                                         growth=self.growth, 
-                                                         current_time=current_time)
+                        prob = self.division_probability(key=random_key, growth=self.growth, current_time=current_time)
 
                         if np.random.uniform(0,1) < prob: self.cell_division(random_key)
                         else: self.cell_death(random_key)
@@ -249,8 +198,7 @@ class Population:
 
                         pbar.update(current_time - pbar.n)
 
-                        if sum(self.population.values())==self.population[0]: 
-                            break
+                        if sum(self.population.values())==self.population[0]: break
 
                 # Restart conditions
                 population_size = sum(self.population.values())
@@ -260,7 +208,6 @@ class Population:
 
                 if restart_simulation:
                     failed_simulations += 1
-                    # print(f'Restarting simulation...')
                     self.population = {0: self.initial_nb_without, 1: 1}
                     break
                 else:
@@ -286,8 +233,6 @@ class Population:
         If from_start, the simulation starts with 1 cell with ecDNA and size-1 cells without ecDNA.
         Otherwise, the simulation starts with the initial_cell_counts dictionary.
         """
-
-
         if verbose: print(f"Simulating cell population evolution using Moran process. Total population size: {size} cells.")
         if verbose: print(f"Fitness function: {self.fitness}\n")
 
@@ -297,23 +242,19 @@ class Population:
         while True:
 
             while True:
-
                 if from_start: self.population = {0: size-1, 1: 1}
                 else: self.population = initial_cell_counts.copy()
-
                 current_time = 0
                 cell_counts = [self.population.copy()]
                 times = [current_time]
                 events_count = 0
 
                 self.fitness_by_key = {key: self.cell_fitness(key) for key in self.population.keys()}  
-                # fitness_by_key = {k: fitness of a cell with k copies of ecDNA}
+                # self.fitness_by_key = {k: fitness of a cell with k copies of ecDNA}
 
-                #with tqdm(total=self.max_time, leave=False) as pbar:
                 with tqdm(total=n_events, leave=False, disable=disable) as pbar:
-                    pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")  # Dynamic update of simulation number
+                    pbar.set_postfix_str(f"Simulation {failed_simulations + 1}")
 
-                    #while current_time < self.max_time:
                     for _ in range(n_events):
                         
                         # COMPUTE TIME TO NEXT EVENT
@@ -332,6 +273,7 @@ class Population:
                         fitness_grouped[random_key_death] = self.population[random_key_death] * self.fitness_by_key[random_key_death]
                         total_fitness = sum(fitness_grouped.values())
                         probabilities_by_clone = [fitness/ total_fitness for fitness in list(fitness_grouped.values())] # probabilities_by_clone = {k: probability to chose the clone with k ecDNA copies}
+                        
                         # CELL DIVISION
                         random_key_division = int(np.random.choice(keys, p=probabilities_by_clone))
                         self.cell_division(random_key_division)
@@ -342,7 +284,6 @@ class Population:
                         times.append(current_time)
                         events_count += 1
 
-                        #pbar.update(current_time - pbar.n)
                         pbar.update(events_count - pbar.n)
 
                         if size==self.population[0]: 
@@ -417,14 +358,15 @@ class Population:
         weighted_average = weighted_sum / total_sum
         return weighted_average
 
-    # plots -------------------------------------------------------------------------------------------------------
+    # PLOT UTILS ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    
     def plot_histogram(self, 
-                   time_index=-1, 
-                   bin_size=5,
-                   plot_color='#DD0054', 
-                   plot_bgcolor='#F1F6FA',
-                   title='Histogram of ecDNA copy number',
-                   save_fig=False):
+                       time_index=-1, 
+                       bin_size=5,
+                       plot_color='#DD0054', 
+                       plot_bgcolor='#F1F6FA',
+                       title='Histogram of ecDNA copy number',
+                       save_fig=False):
 
         timestep_ecDNA_counts = self.cell_counts[time_index]
         data = [key for key, value in timestep_ecDNA_counts.items() for _ in range(value)]
@@ -456,24 +398,16 @@ class Population:
 
         fig = go.Figure()
 
-        data = {'time': self.times,
-                'ecDNA_count': ecDNA_counts,
-                'neutral_count': neutral_counts
-                }
+        data = {'time': self.times, 'ecDNA_count': ecDNA_counts, 'neutral_count': neutral_counts}
         df = pd.DataFrame(data)
 
-        # Melt the DataFrame to long format
         df_melted = pd.melt(df, id_vars=['time'], var_name='Type', value_name='Count')
 
-        # Plot stacked filled areas
-        fig = px.area(df_melted, x='time', y='Count', color='Type', 
-                    title='Evolution of cell count',
-                    labels={'Count': 'Count', 'time': 'Time'},
-                    color_discrete_map={'ecDNA_count': colors.get('ecDNA','tomato'), 'neutral_count': colors.get('neutral', 'lightsteelblue')})
+        fig = px.area(df_melted, x='time', y='Count', color='Type', title='Evolution of cell count', labels={'Count': 'Count', 'time': 'Time'},
+                      color_discrete_map={'ecDNA_count': colors.get('ecDNA','tomato'), 'neutral_count': colors.get('neutral', 'lightsteelblue')})
         
         fig.update_layout(plot_bgcolor=plot_bgcolor,)
 
-        # for plot legend
         name_mapping = {'ecDNA_count': 'with ecDNA', 'neutral_count': 'without ecDNA'}
         for trace in fig.data:
             if trace.name in name_mapping: trace.name = name_mapping[trace.name]
@@ -481,26 +415,13 @@ class Population:
         fig.show()
 
     def plot_mean_CN(self, plot_color='navy', plot_bgcolor='#F1F6FA'):
-        # Assuming you have a list of times and mean ecDNA copy numbers
         times = self.times
         mean_ecDNA_copy_numbers = [self.get_mean(time_index=i) for i in range(len(self.times))]
 
         fig = go.Figure()
-
-        fig.add_trace(go.Scatter(x=times, y=mean_ecDNA_copy_numbers,
-                                mode='lines',
-                                marker=dict(color=plot_color),
-                                name='Mean ecDNA copy number'))
-
-        fig.update_layout(
-            title='Mean ecDNA copy number over time',
-            xaxis=dict(title='Time'),
-            yaxis=dict(title='Mean ecDNA copy number'),
-            plot_bgcolor=plot_bgcolor,
-            showlegend=True,
-            hovermode='closest',
-        )
-
+        fig.add_trace(go.Scatter(x=times, y=mean_ecDNA_copy_numbers, mode='lines', marker=dict(color=plot_color), name='Mean ecDNA copy number'))
+        fig.update_layout(title='Mean ecDNA copy number over time', xaxis=dict(title='Time'), yaxis=dict(title='Mean ecDNA copy number'),
+                          plot_bgcolor=plot_bgcolor, showlegend=True, hovermode='closest',)
         fig.show()
 
     def plot_histograms_slider(self,
@@ -515,84 +436,47 @@ class Population:
         print('Generating slider histograms...')
         fig = go.Figure()
 
-        # Iterate through cell_counts dictionary to get histogram for each timestep
         for time_index in tqdm(range(0, len(self.times), leap)):
             timestep_ecDNA_counts = self.cell_counts[time_index]
             data = [key for key, value in timestep_ecDNA_counts.items() for _ in range(value)]
-            fig.add_trace(
-                go.Histogram(x=data, 
-                            xbins=dict(size=bin_size), 
-                            name="time = " + str(round(self.times[time_index], 1)), 
-                            marker=dict(color=plot_color)
-                )
-            )
+            fig.add_trace(go.Histogram(x=data, xbins=dict(size=bin_size), name="time = " + str(round(self.times[time_index], 1)), marker=dict(color=plot_color)))
 
         # Create and add slider
         steps = []
         for i in range(len(fig.data)):
-            step = dict(
-                method="update",
-                args=[{"visible": [False] * len(fig.data)}],
-            )
+            step = dict(method="update", args=[{"visible": [False] * len(fig.data)}],)
             step["args"][0]["visible"][i] = True
             steps.append(step)
 
-        sliders = [dict(
-            active=0,
-            currentvalue={"prefix": "Time: "},
-            pad={"t": 50},
-            steps=steps
-        )]
+        sliders = [dict(active=0, currentvalue={"prefix": "Time: "}, pad={"t": 50}, steps=steps)]
 
-        fig.update_layout(
-            sliders=sliders,
-            title=title+ f" with {self.model} model and {self.fitness} fitness function (s={self.s})",
-            xaxis=dict(title=xlabel, range=[-0.5,upper_xaxis]),
-            bargap=0.1,
-            plot_bgcolor=plot_bgcolor
-        )
-
+        fig.update_layout(sliders=sliders, title=title+ f" with {self.model} model and {self.fitness} fitness function (s={self.s})",
+                          xaxis=dict(title=xlabel, range=[-0.5,upper_xaxis]), bargap=0.1, plot_bgcolor=plot_bgcolor)
         fig.show()
-
-
-
 
     def plot_event_times(self, plot_color='turquoise', plot_bgcolor='#F1F6FA', expected_color='navy'):
         fig = go.Figure()
 
-        fig.add_trace(go.Scatter(x=self.times, y=list(range(len(self.times))),
-                                mode='markers',
-                                marker=dict(color=plot_color, size=5),
-                                line=dict(width=3),
-                                name='Simulated event times'))
+        fig.add_trace(go.Scatter(x=self.times, y=list(range(len(self.times))), mode='markers', marker=dict(color=plot_color, size=5), 
+                                 line=dict(width=3), name='Simulated event times'))
         
-        # Adding the line passing through (0, 0) with slope self.initial_rate
         x_line = np.array([min(self.times), max(self.times)])
         y_line = self.initial_rate * x_line
         fig.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines', name='Expected event times if the total fitness was constant',
-                                line=dict(color=expected_color, dash='dash'),
-                                hoverinfo='none'))
-
-        fig.update_layout(
-            title='Event times in cell population' + f" with {self.model} model and {self.fitness} fitness function (s={self.s})",
-            xaxis=dict(title='Time'),
-            yaxis=dict(title='Event index'),
-            plot_bgcolor=plot_bgcolor,
-            showlegend=True,
-            hovermode='closest',
-        )
-
+                                 line=dict(color=expected_color, dash='dash'), hoverinfo='none'))
+        
+        fig.update_layout(title='Event times in cell population' + f" with {self.model} model and {self.fitness} fitness function (s={self.s})",
+                          xaxis=dict(title='Time'), yaxis=dict(title='Event index'), plot_bgcolor=plot_bgcolor, showlegend=True, hovermode='closest',)
         fig.show()
 
 
 
-# main ------------------------------------------------------------------------------------------------------------
+# MAIN --------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Simulate Gillespie process and plot histogram of cell counts.')
 
-    # add arguments
     parser.add_argument('--initial_nb_without', type=int, default=0, help='Initial count of neutral cells')
     parser.add_argument('--turnover', type=float, default=1, help='Turnover rate of cells')
     parser.add_argument('--max_cells', type=int, default=1e5, help='Maximum number of cells')
@@ -602,27 +486,20 @@ if __name__ == '__main__':
     parser.add_argument('--plot_histograms_slider', action='store_true', help='If the argument is present, then the figure with histograms and slider will be plotted. Otherwise it will not.')    
     parser.add_argument('--plot_evolution', action='store_true', help='If the argument is present, then the evolution of cell counts will be plotted. Otherwise it will not.')
 
-    # parse arguments
     args = parser.parse_args()
 
-    # initialize population and simulate evolution
+    # INITIALIZE POPULATION AND SIMULATE EVOLUTION
     population = Population(initial_nb_without=args.initial_nb_without, 
                             turnover=args.turnover, 
                             max_cells=args.max_cells, 
                             growth=args.growth)
-    
     times, cell_counts = population.simulate_feedback()
 
-    # plot histogram and evolution
+    # PLOTS
     if args.plot_evolution:
         colors = {'ecDNA': 'tomato', 'neutral': 'lightsteelblue'}
         population.plot_evolution_area(colors=colors)
 
-    if args.plot_histogram:
-        population.plot_histogram(time_index=args.time_index, 
-                                  plot_color='deepskyblue',
-                                  plot_bgcolor='#F1F6FA')
+    if args.plot_histogram: population.plot_histogram(time_index=args.time_index, plot_color='deepskyblue', plot_bgcolor='#F1F6FA')
 
-    if args.plot_histograms_slider:
-        population.plot_histograms_slider()
-    
+    if args.plot_histograms_slider: population.plot_histograms_slider()
