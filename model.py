@@ -294,6 +294,7 @@ class Population:
                 restart_simulation = False
                 if population_size == self.population[0]: restart_simulation = True
                 elif population_size == 0: restart_simulation = True
+                # elif sum([self.population[i] for i in range(11)])==0: restart_simulation = True # restart if no cell has more than 10 copies
 
                 if restart_simulation:
                     failed_simulations += 1

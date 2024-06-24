@@ -8,4 +8,4 @@
 
 module load anaconda
 
-python abcruns.py --expname synthetic1double --inference double
+python abcruns.py --expname synthetic1 --inference selection --start -5

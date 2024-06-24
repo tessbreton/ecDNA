@@ -191,10 +191,11 @@ class DoubleInference(ABCInference):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run ABC Inference')
+    parser = argparse.ArgumentParser(description='Run ABC simulations')
     parser.add_argument('--expname', type=str, required=True, help='Name of the experiment. There must be a folder with this name in experiments/.')
     parser.add_argument('--inference', type=str, required=True, choices=['selection', 'double'], 
                         help='Type of inference. double to infer both the selection parameter and the starting passage, simple to infer only the selection parameter given the starting passage.')
+    parser.add_argument('--start', type=int, required=False, help='Starting passage when we sample only the selection parameter.')
 
     args = parser.parse_args()
     expname = args.expname
@@ -203,8 +204,9 @@ if __name__ == "__main__":
     s_range = [0.01, 0.11]
     start_range = [-9, 1]
     num_samples = 1000
-    params = load_yaml(f'experiments/{expname}/data/params.yaml')
-    start, sref = params['start'], params['s']
+    if expname!='CAM277':
+        params = load_yaml(f'experiments/{expname}/data/params.yaml')
+        start, sref = params['start'], params['s']
 
     if inference == 'selection':
         abc_inference = SelectionInference(s_range=s_range, start=start, num_samples=num_samples, synthetic=True, expname=expname)

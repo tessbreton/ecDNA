@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 import yaml
 import os
 from math import ceil 
+from scipy.stats import wasserstein_distance
 
 # PLOT FUNCTIONS -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -527,3 +528,67 @@ def plot_posterior_util(s_values, distances, top_percent=5, plot_color='lightsky
     if save:
         fig.update_layout(width=width, height=height)
         fig.write_image(filepath, scale=scale)
+
+
+def generate_intervals(s_range, step=0.01):
+    start = s_range[0]
+    stop = s_range[1]
+    intervals = []
+
+    while start < stop:
+        next_value = round(start + step, 2)
+        if next_value > stop:
+            break
+        intervals.append([round(start, 2), next_value])
+        start = next_value
+
+    return intervals
+
+
+
+
+def error_s_heatmap(error_s, s_intervals, start_values):
+    
+    hover_text = []
+    for j in range(len(start_values)):
+        hover_text.append([f's interval: {s_intervals[i][0]} - {s_intervals[i][1]}<br>starting passage: {start_values[j]}<br>relative error: {100 * error_s[j][i]:.2f}%' for i in range(len(s_intervals))])
+
+    fig = go.Figure(data=go.Heatmap(
+        z=100 * error_s,
+        x=[f'{s_intervals[i][0]} - {s_intervals[i][1]}' for i in range(len(s_intervals))],
+        y=start_values,
+        #colorscale='Viridis',
+        text=hover_text,
+        hoverinfo='text',
+        # zmin=0, zmax=100
+    ))
+
+    fig.update_layout(
+        title='Error on selection parameter estimations',
+        xaxis_title='Selection parameter interval',
+        yaxis_title='Starting passage',
+        width=600, height=600,
+        yaxis=dict(
+            tickvals=start_values,
+            ticktext=start_values
+        )
+    )
+
+    # Afficher la heatmap
+    fig.show()
+
+
+def calculate_distance(data, reference):
+    '''weighted sum of Wasserstein distances at P4 and P15'''
+    total_distance = 0
+    weights = {'P4':2, 'P15':0.5}
+    
+    for key in reference.keys():
+        reference_normalized = normalize_distribution(reference[key])
+        data_normalized = normalize_distribution(data[key])
+        values1, weights1 = zip(*reference_normalized.items())
+        values2, weights2 = zip(*data_normalized.items())
+        distance = float(wasserstein_distance(values1, values2, u_weights=weights1, v_weights=weights2))
+        total_distance += weights[key] * distance
+
+    return total_distance
