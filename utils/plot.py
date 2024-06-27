@@ -1,15 +1,12 @@
+# PLOTS -----------------------------------------------------------------------------------------------------------------------------------------------
+
 import plotly.graph_objects as go
 import numpy as np
 from tqdm import tqdm
-import pandas as pd
 from model import Population
 from plotly.subplots import make_subplots
-import yaml
-import os
-from math import ceil 
-from scipy.stats import wasserstein_distance
 
-# PLOT FUNCTIONS -------------------------------------------------------------------------------------------------------------------------------------------------------------
+from utils.other import dict_to_values, get_boundaries, get_labels, get_best_indices
 
 def plot_histograms_dict_overlay(dictionaries:list[dict], bin_size=10, 
                                  title='', xaxis_title='ecDNA counts', yaxis_title='Frequency',
@@ -144,74 +141,44 @@ def plot_histograms(data:list, binsize=10, opacity=None, colors=None, labels=Non
 
     fig.show()
 
+# Function to calculate ECDF
+def ecdf(data):
+    n = len(data)
+    x = np.sort(data)
+    y = np.arange(1, n+1) / n
+    return x, y
 
-def trace_ecdf(data,
-               label='',
-               color='blue'):
-    
-    sorted_data = np.sort(data)
-    ecdf_attr = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
-    return go.Scatter(x=sorted_data, y=ecdf_attr, mode='lines', line=dict(color=color, width=2.5), name=label)
-
-
-def plot_ecdfs(dfs:list,
-               column_name='ecCounts',
-               labels=('Passage 4', 'Passage 15'),
-               title='ECDFs of ecDNA counts at different passages',
-               xaxis_title='ecDNA counts',
-               yaxis_title='Probability',
-               colors=('violet', 'deepskyblue')):
+def plot_ecdfs(distributions:list,
+               labels, 
+               title='Empirical Cumulative Distribution Functions (ECDF)', 
+               colors=('#60EE95','navy'),
+               show=True, save=False, filepath=None):
     
     fig = go.Figure()
-    
-    for df, label, color in zip(dfs, labels, colors):
-        trace = trace_ecdf(df[column_name], label=label, color=color)
-        fig.add_trace(trace)
 
+    for distribution, label, color in zip(distributions, labels, colors):
+        values = dict_to_values(distribution)
+        x, y = ecdf(values)
+        fig.add_trace(go.Scatter(
+            x=x, 
+            y=y, 
+            mode='lines', 
+            name=label,
+            line=dict(color=color),
+        ))
+
+    # Add titles and axis labels
     fig.update_layout(
         title=title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        plot_bgcolor='#F1F6FA'
+        xaxis_title='ecDNA copy number',
+        yaxis_title='probability',
+        width=500,
+        height=500,
+        plot_bgcolor='white'
     )
 
-    fig.show()
-
-# DATAFRAME
-
-def to_dataframe(times, cell_counts):
-    max_copies = max(list(cell_counts[-1].keys()))
-
-    # Create an empty DataFrame with columns for each copy count
-    df = pd.DataFrame(0, columns=[i for i in range(max_copies + 1)], index=times)
-
-    # Fill the DataFrame with counts from cell_counts
-    for time, subdict in tqdm(zip(times, cell_counts)):
-        for copies, count in subdict.items():
-            df.at[time, copies] = count
-
-    return df
-
-def plot_histogram_dict(dictionary,bin_size=5,
-                   plot_color='deepskyblue', 
-                   plot_bgcolor='white',
-                   title='Histogram of ecDNA copy number'):
-
-    data = [key for key, value in dictionary.items() for _ in range(value)]
-    
-    histogram_trace = go.Histogram(x=data, marker=dict(color=plot_color), xbins=dict(start=0,size=bin_size))
-
-    layout = go.Layout(
-        title=title,
-        xaxis=dict(title='Number of copies'),
-        bargap=0.1,
-        plot_bgcolor=plot_bgcolor
-    )
-
-    fig = go.Figure(data=[histogram_trace], layout=layout)
-
-    fig.show()
+    if show: fig.show()
+    if save: fig.write_image(filepath, scale=5)
 
 
 def plot_histograms_avg(dictionaries, reference_data, reference_label, title, filepath):
@@ -223,65 +190,6 @@ def plot_histograms_avg(dictionaries, reference_data, reference_label, title, fi
             filepath=filepath
         )
 
-
-def plot_ecdf(df, 
-              title='ECDF of ecDNA counts',
-              xaxis_title='ecDNA counts',
-              yaxis_title='Probability',
-              color='deepskyblue',
-              plot_bgcolor='#F1F6FA'):
-    """
-    Plot the ECDF of the ecDNA counts at the last time point.
-    """
-    
-    counts_at_last_time = df.iloc[-1]
-    l = [key for key, value in counts_at_last_time.items() for _ in range(value)]
-
-    fig = go.Figure()
-
-    trace = trace_ecdf(l, label='label', color=color)
-    fig.add_trace(trace)
-
-    fig.update_layout(
-        title=title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        legend=dict(orientation='h'),
-        plot_bgcolor=plot_bgcolor,
-    )
-
-    fig.show()
-
-def scatter_joint_marginal(x, y, xlabel, ylabel, title='', info=None, infolabel=None,
-                           show=True, save=False, filepath=None, width=600, height=600, scale=3, add_ref=False, xref=None, yref=None):
-    
-    if info is not None: hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}, {infolabel}: {info[i]:.2f}" for i in range(len(x))]
-    else: hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}" for i in range(len(x))]
-
-    scatter = go.Scatter(x=x, y=y, mode='markers', marker=dict(size=7, color='deepskyblue'),
-                         text=hover_text, hoverinfo='text', showlegend=False,)
-    hist_x = go.Histogram(x=x, nbinsx=40, marker=dict(color='navy'), showlegend=False, yaxis='y2')
-    hist_y = go.Histogram(y=y, nbinsy=40, marker=dict(color='coral'), showlegend=False, xaxis='x2')
-
-    if add_ref:
-        big_red_point = go.Scatter(x=[xref], y=[yref], mode='markers', marker=dict(size=12, color='red'), 
-                                   name='Reference Parameters', showlegend=True,)
-
-    layout = go.Layout(title=title, width=width, height=height, 
-                       xaxis=dict(title=xlabel, domain=[0.0, 0.85], showgrid=False, zeroline=False),
-                       yaxis=dict(title=ylabel, domain=[0.0, 0.85], showgrid=False, zeroline=False),
-                       xaxis2=dict(domain=[0.85, 1.0], showgrid=False, zeroline=False),
-                       yaxis2=dict(domain=[0.85, 1.0], showgrid=False, zeroline=False),
-                       plot_bgcolor='white', paper_bgcolor='white', bargap=0, hovermode='closest')
-
-    if add_ref: fig = go.Figure(data=[scatter, hist_x, hist_y, big_red_point], layout=layout)
-    else : fig = go.Figure(data=[scatter, hist_x, hist_y], layout=layout)
-
-    if show: fig.show()
-
-    if save:
-        fig.update_layout(width=width, height=height)
-        fig.write_image(filepath, scale=scale)
 
 def plot_histograms_grouped(x, y, xlabel, ylabel, title='', show=True, save=False, width=500, height=700, scale=3, filepath=None):
     unique_y_values = sorted(set(y))  # Get unique values of y
@@ -316,39 +224,6 @@ def plot_histograms_grouped(x, y, xlabel, ylabel, title='', show=True, save=Fals
         fig.update_layout(width=width, height=total_height)
         fig.write_image(filepath, scale=scale)
 
-
-# plot evolution
-def get_boundaries(group_limits, df):
-    boundaries = []
-
-    for i in range(len(group_limits) + 1):
-
-        if i == 0: lower_bound = 1
-        else: lower_bound = group_limits[i - 1] + 1
-
-        if i == len(group_limits): upper_bound = df.shape[1]
-        else: upper_bound = group_limits[i] + 1
-
-        boundaries.append((lower_bound, upper_bound))
-
-    return boundaries
-
-def get_labels(boundaries):
-    labels = []
-    for i,boundary in enumerate(boundaries):
-        lower_bound, upper_bound = boundary
-        if i==len(boundaries)-1:
-            labels.append(f'{lower_bound}+ copies')
-        else: 
-            if lower_bound == upper_bound - 1 :
-                if lower_bound==1:
-                    labels.append('1 copy')
-                else:
-                    labels.append(f'{lower_bound} copies')
-                
-            else:
-                labels.append(f'{lower_bound}-{upper_bound-1} copies')
-    return labels + ['no copy']
 
 def plot_evolution_area_multiple(df, group_limits=[10,20,30,40,50,100], plot_bgcolor='white',
                                  colors = ['gold', 'orange', 'darkorange', 'orangered', 'red', 'firebrick', 'darkred', 'palegreen'],):
@@ -420,76 +295,7 @@ def plot_mean_CN_multi_simulations(n_simulations,
 
 
 
-# LOADING AND SAVING DATA -----------------------------------------------------------------------------------------------------------------------------------------------
-
-def save_yaml(dictionary, file_path):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w") as yaml_file:
-        yaml.dump(dictionary, yaml_file)
-    
-    print('Dictionary saved as yaml file to', file_path)
-
-def get_save_folder(path='runs'):
-    index = 1
-    while True:
-        result_folder = os.path.join(path, f"run{index}")
-        
-        if not os.path.exists(result_folder):
-            os.makedirs(result_folder)
-            return result_folder
-        
-        index += 1
-
-def load_yaml(file_path):
-    with open(file_path, "r") as yaml_file:
-        loaded_dict = yaml.safe_load(yaml_file)
-    return loaded_dict
-
-
-def normalize_distribution(distribution:dict):
-    total_count = sum(distribution.values())
-    return {k: v / total_count for k, v in distribution.items()}
-
-def filter_distribution(distribution, threshold):
-    return {k: v for k, v in distribution.items() if k >= threshold}
-
-def filter_and_normalize(distribution, threshold=10):
-    return normalize_distribution(filter_distribution(distribution, threshold))
-
-def standard_score(distances):
-    mean = float(np.mean(distances))
-    std = float(np.std(distances))
-    return [(d - mean) / std for d in distances]
-
-def get_best_indices(distances, top_percent):
-    '''Find indices corresponding to {top_percent}% smallest distances'''
-    num_points = len(distances)
-    num_smallest_points = ceil(0.01 * top_percent * num_points)
-    smallest_indices = np.argsort(distances)[:num_smallest_points]
-    smallest_indices = smallest_indices.tolist()
-    return smallest_indices
-
-def plot_best_points_util(s_values, distances, metric='Wasserstein', top_percent=5, best_color='turquoise',
-                          show=True, save=False, width=700, height=400, scale=3, filepath=None,):
-    fig = go.Figure()
-
-    # Get indices of the best points (smallest distances)
-    smallest_indices = get_best_indices(distances, top_percent)
-    
-    fig.add_trace(go.Scatter(x=s_values, y=distances, mode='markers', marker=dict(color='black', size=5), name='All points'))
-    fig.add_trace(go.Scatter(x=np.array(s_values)[smallest_indices], y=np.array(distances)[smallest_indices], mode='markers',
-                             marker=dict(color=best_color, size=8), name=f'{top_percent}% smallest distances'))
-
-    fig.update_layout(xaxis_title='s', yaxis_title='Distance', plot_bgcolor='white')
-    fig.update_traces(hovertemplate='s: %{x:.3f}<br>'+metric+' distance: %{y:.1f}')  # Utilisez '.2f' pour afficher 2 décimales
-
-    if show: fig.show()
-
-    if save:
-        fig.update_layout(width=width, height=height)
-        fig.write_image(filepath, scale=scale)
-
-def plot_posterior_util(s_values, distances, top_percent=5, plot_color='lightskyblue',
+def plot_posterior(s_values, distances, top_percent=5, plot_color='lightskyblue',
                         show=True, save=False, filepath=None,
                         add_ref=False, sref=None, 
                         width=700, height=400, scale=5):   
@@ -530,21 +336,6 @@ def plot_posterior_util(s_values, distances, top_percent=5, plot_color='lightsky
         fig.write_image(filepath, scale=scale)
 
 
-def generate_intervals(s_range, step=0.01):
-    start = s_range[0]
-    stop = s_range[1]
-    intervals = []
-
-    while start < stop:
-        next_value = round(start + step, 2)
-        if next_value > stop:
-            break
-        intervals.append([round(start, 2), next_value])
-        start = next_value
-
-    return intervals
-
-
 
 
 def error_s_heatmap(error_s, s_intervals, start_values):
@@ -578,17 +369,125 @@ def error_s_heatmap(error_s, s_intervals, start_values):
     fig.show()
 
 
-def calculate_distance(data, reference):
-    '''weighted sum of Wasserstein distances at P4 and P15'''
-    total_distance = 0
-    weights = {'P4':2, 'P15':0.5}
-    
-    for key in reference.keys():
-        reference_normalized = normalize_distribution(reference[key])
-        data_normalized = normalize_distribution(data[key])
-        values1, weights1 = zip(*reference_normalized.items())
-        values2, weights2 = zip(*data_normalized.items())
-        distance = float(wasserstein_distance(values1, values2, u_weights=weights1, v_weights=weights2))
-        total_distance += weights[key] * distance
+def qqplot(simulation, reference, title, show=True, save=False, filepath=None):
+    values1 = dict_to_values(simulation)
+    values2 = dict_to_values(reference)
 
-    return total_distance
+    # Sort the values
+    values1.sort()
+    values2.sort()
+
+    # Ensure both distributions have the same number of points for comparison
+    min_len = min(len(values1), len(values2))
+    values1 = np.array(values1[:min_len])
+    values2 = np.array(values2[:min_len])
+
+    # Create QQ plot
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=values1,
+        y=values2,
+        mode='markers',
+        name='QQ Plot',
+        marker=dict(size=5, color='blue')
+    ))
+
+    # Add diagonal line y=x for reference
+    min_val = min(min(values1), min(values2))
+    max_val = max(max(values1), max(values2))
+
+    fig.add_shape(
+        type='line',
+        x0=min_val, y0=min_val, x1=max_val, y1=max_val,
+        line=dict(color='red', dash='dash')
+    )
+    # Add titles and axis labels
+    fig.update_layout(
+        title=title,
+        xaxis_title='Quantiles of best simulation',
+        yaxis_title='Quantiles of reference data',
+        width=500,
+        height=500,
+        plot_bgcolor='white'
+    )
+
+    # Show the plot
+    if show: fig.show()
+
+    # Save the plot as an image (optional)
+    if save: fig.write_image(filepath, scale=5)
+
+
+def plot_best_points_util(s_values, distances, metric='Wasserstein', top_percent=5, best_color='turquoise',
+                          show=True, save=False, width=700, height=400, scale=3, filepath=None,):
+    fig = go.Figure()
+
+    # Get indices of the best points (smallest distances)
+    smallest_indices = get_best_indices(distances, top_percent)
+    
+    fig.add_trace(go.Scatter(x=s_values, y=distances, mode='markers', marker=dict(color='black', size=5), name='All points'))
+    fig.add_trace(go.Scatter(x=np.array(s_values)[smallest_indices], y=np.array(distances)[smallest_indices], mode='markers',
+                             marker=dict(color=best_color, size=8), name=f'{top_percent}% smallest distances'))
+
+    fig.update_layout(xaxis_title='s', yaxis_title='Distance', plot_bgcolor='white')
+    fig.update_traces(hovertemplate='s: %{x:.3f}<br>'+metric+' distance: %{y:.1f}')  # Utilisez '.2f' pour afficher 2 décimales
+
+    if show: fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)
+
+
+def plot_histogram_dict(dictionary,bin_size=5,
+                   plot_color='deepskyblue', 
+                   plot_bgcolor='white',
+                   title='Histogram of ecDNA copy number'):
+
+    data = [key for key, value in dictionary.items() for _ in range(value)]
+    
+    histogram_trace = go.Histogram(x=data, marker=dict(color=plot_color), xbins=dict(start=0,size=bin_size))
+
+    layout = go.Layout(
+        title=title,
+        xaxis=dict(title='Number of copies'),
+        bargap=0.1,
+        plot_bgcolor=plot_bgcolor
+    )
+
+    fig = go.Figure(data=[histogram_trace], layout=layout)
+
+    fig.show()
+
+
+def scatter_joint_marginal(x, y, xlabel, ylabel, title='', info=None, infolabel=None,
+                           show=True, save=False, filepath=None, width=600, height=600, scale=3, add_ref=False, xref=None, yref=None):
+    
+    if info is not None: hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}, {infolabel}: {info[i]:.2f}" for i in range(len(x))]
+    else: hover_text = [f"{xlabel}: {x[i]:.3f}, {ylabel}: {y[i]}" for i in range(len(x))]
+
+    scatter = go.Scatter(x=x, y=y, mode='markers', marker=dict(size=7, color='deepskyblue'),
+                         text=hover_text, hoverinfo='text', showlegend=False,)
+    hist_x = go.Histogram(x=x, nbinsx=40, marker=dict(color='navy'), showlegend=False, yaxis='y2')
+    hist_y = go.Histogram(y=y, nbinsy=40, marker=dict(color='coral'), showlegend=False, xaxis='x2')
+
+    if add_ref:
+        big_red_point = go.Scatter(x=[xref], y=[yref], mode='markers', marker=dict(size=12, color='red'), 
+                                   name='Reference Parameters', showlegend=True,)
+
+    layout = go.Layout(title=title, width=width, height=height, 
+                       xaxis=dict(title=xlabel, domain=[0.0, 0.85], showgrid=False, zeroline=False),
+                       yaxis=dict(title=ylabel, domain=[0.0, 0.85], showgrid=False, zeroline=False),
+                       xaxis2=dict(domain=[0.85, 1.0], showgrid=False, zeroline=False),
+                       yaxis2=dict(domain=[0.85, 1.0], showgrid=False, zeroline=False),
+                       plot_bgcolor='white', paper_bgcolor='white', bargap=0, hovermode='closest')
+
+    if add_ref: fig = go.Figure(data=[scatter, hist_x, hist_y, big_red_point], layout=layout)
+    else : fig = go.Figure(data=[scatter, hist_x, hist_y], layout=layout)
+
+    if show: fig.show()
+
+    if save:
+        fig.update_layout(width=width, height=height)
+        fig.write_image(filepath, scale=scale)

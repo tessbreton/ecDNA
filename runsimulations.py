@@ -1,8 +1,10 @@
 import multiprocessing as mp
 import os, time, datetime, argparse
 import numpy as np
-from utils import filter_distribution, load_yaml, save_yaml, get_save_folder, get_best_indices
 from model import *
+
+from utils.load import save_yaml, get_save_folder
+from utils.other import filter_distribution
 
 class Run:
     def __init__(self, num_samples, expname, fitness='log', size=1000, top_percent=5):
@@ -23,7 +25,7 @@ class Run:
     def sample_parameters(self):
         raise NotImplementedError("This method should be implemented in a subclass")
     
-    def run_simulation(self):
+    def run_one_simulation(self):
         raise NotImplementedError("This method should be implemented in a subclass")
 
     def worker(self, num_samples):
@@ -39,7 +41,7 @@ class Run:
         start_time = time.time()
         num_cores = 32
 
-        print('\nRunning simulations in parallel...')
+        print(f'\nRunning simulations... (parallel with {num_cores} CPU cores, should take less than 5min for 100, less than 50min for 1000)')
         with mp.Pool(processes=num_cores) as pool:
             results = pool.map(self.worker, [1]*self.num_samples)
         print('Parallel simulations complete.')
@@ -69,6 +71,7 @@ class SelectionRun(Run):
     def __init__(self, s_range, num_samples, expname, start, fitness='log', size=1000):
         super().__init__(num_samples=num_samples, fitness=fitness, size=size, expname=expname)
         self.s_range = s_range
+        print('s range:', s_range)
         self.start = start
         self.sampled_s = []
         self.simulated_data_list_P4 = []

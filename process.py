@@ -1,6 +1,10 @@
 import os
-from utils import *
+from tqdm import tqdm
 import argparse
+
+from utils.load import load_yaml, save_yaml
+from utils.plot import plot_histograms_dict_overlay, plot_best_points_util, scatter_joint_marginal, plot_histograms_grouped, plot_posterior
+from utils.other import filter_distribution, get_best_indices
 
 def main(expname, inference):
     exp_dir = f'experiments/{expname}/'
@@ -110,7 +114,7 @@ def main(expname, inference):
         plot_avg=True, plot_all=False, show=False, save=True, filepath=paths['plots']+'topsimulationsP15.png',
         labels=[""]*len(top_s), colors=['gold']*len(top_s), opacity=[0.3]*len(top_s))
 
-    plot_posterior_util(
+    plot_posterior(
         s_values=sampled_s, distances=distances, top_percent=top_percent, save=True, show=False, 
         add_ref=True, sref=sref, plot_color='paleturquoise', filepath=paths['plots']+'posterior.png')
 

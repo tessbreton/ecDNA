@@ -8,4 +8,4 @@
 
 module load anaconda
 
-python abcruns.py --expname synthetic1 --inference selection --start -5
+python abcinference.py --expname CAM277 --inference selection
