@@ -172,9 +172,8 @@ class ABCInference:
 
 class SelectionInference(ABCInference):
 
-    def __init__(self, s_range, expname, start=-5, fitness='log', size=1000):
+    def __init__(self, expname, start=-5, fitness='log', size=1000):
         super().__init__(fitness=fitness, size=size, expname=expname)
-        self.s_range = s_range
         self.start = start
         self.runs_path = f'runs/P{start}'
 
@@ -215,10 +214,8 @@ class SelectionInference(ABCInference):
 
 class DoubleInference(ABCInference):
 
-    def __init__(self, s_range, start_range, expname, fitness='log', size=1000):
+    def __init__(self, expname, fitness='log', size=1000):
         super().__init__(fitness=fitness, size=size, expname=expname)
-        self.s_range = s_range
-        self.start_range = start_range
         self.simulationsP4 = []
         self.simulationsP15 = []
 
@@ -232,9 +229,6 @@ if __name__ == "__main__":
     expname = args.expname
     inference = args.inference
 
-    s_range = [0.01, 0.1]
-    start_range = [-9, 1]
-
     if expname=='CAM277':
         start = -5
     elif expname!='CAM277double':
@@ -242,9 +236,9 @@ if __name__ == "__main__":
         start, sref = params['start'], params['s']
 
     if inference == 'selection':
-        abc_inference = SelectionInference(s_range=s_range, start=start, expname=expname)
+        abc_inference = SelectionInference(expname=expname)
     elif inference == 'double':
-        abc_inference = DoubleInference(s_range=s_range, start_range=start_range, expname=expname)
+        abc_inference = DoubleInference(expname=expname)
 
     abc_inference.load_simulations()
     abc_inference.load_reference()
