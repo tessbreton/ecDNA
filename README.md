@@ -1,6 +1,6 @@
 # Evolutionary dynamics of ecDNA counts in cancer cells
 
-This repository was used during my internship at the IICD in April-July 2024. I worked on modeling ecDNA dynamics in cancer cells populations. We tried to build a model that would 'explain' the reference data, which comes from [this paper](https://www.nature.com/articles/s41467-024-47619-4) and can be found in ```experiments/CAM277/data```. I used this code to run simulations an to run the parameter inference using an ABC algorithm. 
+This repository was used during my internship at the IICD in April-July 2024. I worked on modeling ecDNA dynamics in cancer cells populations. We tried to build a model that would 'explain' the reference data, which comes from [this paper](https://www.nature.com/articles/s41467-024-47619-4) and can be found in ```experiments/CAM277/data```. I used this code to run simulations and the parameter inference using an ABC algorithm. 
 
 Most of the code was run on a distant server via ```.sh``` files, but they can all be run locally using the command lines given in these files.
 
