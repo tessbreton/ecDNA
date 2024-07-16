@@ -1,10 +1,9 @@
 # OTHER UTILS -----------------------------------------------------------------------------------------------------------------------------------------------
 
 import numpy as np
-from tqdm import tqdm
-import pandas as pd
 from math import ceil 
 from scipy.stats import wasserstein_distance
+
 
 def dict_to_values(d):
     values = []
@@ -12,20 +11,25 @@ def dict_to_values(d):
         values.extend([k] * v)
     return values
 
+
 def normalize_distribution(distribution:dict):
     total_count = sum(distribution.values())
     return {k: v / total_count for k, v in distribution.items()}
 
+
 def filter_distribution(distribution, threshold):
     return {k: v for k, v in distribution.items() if k >= threshold}
 
+
 def filter_and_normalize(distribution, threshold=10):
     return normalize_distribution(filter_distribution(distribution, threshold))
+
 
 def standard_score(distances):
     mean = float(np.mean(distances))
     std = float(np.std(distances))
     return [(d - mean) / std for d in distances]
+
 
 def get_best_indices(distances, top_percent):
     '''Find indices corresponding to {top_percent}% smallest distances'''
@@ -34,6 +38,7 @@ def get_best_indices(distances, top_percent):
     smallest_indices = np.argsort(distances)[:num_smallest_points]
     smallest_indices = smallest_indices.tolist()
     return smallest_indices
+
 
 def calculate_distance(data, reference):
     '''weighted sum of Wasserstein distances at P4 and P15'''
@@ -50,6 +55,7 @@ def calculate_distance(data, reference):
 
     return total_distance
 
+
 def generate_intervals(s_range, step=0.01):
     start = s_range[0]
     stop = s_range[1]
@@ -63,6 +69,7 @@ def generate_intervals(s_range, step=0.01):
         start = next_value
 
     return intervals
+
 
 def get_boundaries(group_limits, df):
     boundaries = []
@@ -78,6 +85,7 @@ def get_boundaries(group_limits, df):
         boundaries.append((lower_bound, upper_bound))
 
     return boundaries
+
 
 def get_labels(boundaries):
     labels = []
@@ -95,16 +103,3 @@ def get_labels(boundaries):
             else:
                 labels.append(f'{lower_bound}-{upper_bound-1} copies')
     return labels + ['no copy']
-
-def to_dataframe(times, cell_counts):
-    max_copies = max(list(cell_counts[-1].keys()))
-
-    # Create an empty DataFrame with columns for each copy count
-    df = pd.DataFrame(0, columns=[i for i in range(max_copies + 1)], index=times)
-
-    # Fill the DataFrame with counts from cell_counts
-    for time, subdict in tqdm(zip(times, cell_counts)):
-        for copies, count in subdict.items():
-            df.at[time, copies] = count
-
-    return df

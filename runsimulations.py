@@ -3,7 +3,7 @@ import os, time, datetime, argparse
 import numpy as np
 from model import *
 
-from utils.load import save_yaml, get_save_folder
+from utils.load import save_yaml, get_save_folder, load_yaml
 from utils.other import filter_distribution
 
 class Run:
@@ -112,6 +112,70 @@ class SelectionRun(Run):
 
         save_yaml(dictionary={'start': self.start,'s_range': self.s_range}, 
                   file_path=os.path.join(self.run_folder, 'params.yaml'))
+        
+class P4P15Run(Run):
+
+    def __init__(self, s_range, num_samples, expname, fitness='log', size=1000):
+        super().__init__(num_samples=num_samples, fitness=fitness, size=size, expname=expname)
+        self.s_range = s_range
+        print('s range:', s_range)
+        self.sampled_s = []
+        self.simulated_data_list_P15 = []
+
+    def sample_parameters(self):
+        s = np.random.uniform(*self.s_range)
+        return {'s': s}
+    
+    def run_one_simulation(self, s):
+        events_per_passage = 9
+        n_passages = 15 - 4
+        n_events = events_per_passage * n_passages * self.size
+        initial_cell_counts = load_yaml('experiments/P4P15/data/cell_counts_p4.yaml')
+        total = sum(initial_cell_counts.values())
+        initial_cell_counts[0] = self.size - total
+
+        population = Population(fitness=self.fitness, s=s)
+        population.simulate_moran(size=self.size, n_events=n_events, verbose=False, disable=True, from_start=False, 
+                                  initial_cell_counts=initial_cell_counts)
+
+        # Retrieve cell counts at P15
+        population_P15 = population.cell_counts[-1]
+
+        return population_P15
+    
+    def run_simulations(self):
+        start_time = time.time()
+        num_cores = 32
+
+        print(f'\nRunning simulations... (parallel with {num_cores} CPU cores, should take less than 5min for 100, less than 50min for 1000)')
+        with mp.Pool(processes=num_cores) as pool:
+            results = pool.map(self.worker, [1]*self.num_samples)
+
+        print('Parallel simulations complete.')
+        for sublist in results:
+            for params, simulated_data in sublist:
+
+                self.sampled_params.append(params)
+                self.simulated_data_list_P15.append(filter_distribution(simulated_data, self.threshold))
+
+        self.simulated_data = self.simulated_data_list_P15
+        
+        end_time = time.time()
+        total_runtime = end_time - start_time
+
+        print("Run complete.\n")
+        print(f"Total samples collected: {len(self.sampled_params)}")
+        print(f"Total runtime: {str(datetime.timedelta(seconds=int(total_runtime)))}\n")
+
+    def save_results(self):
+        simulations = self.simulated_data_list_P15
+        save_yaml(dictionary=simulations, file_path=os.path.join(self.run_folder, 'simulations.yaml'))
+
+        self.sampled_s = [params['s'] for params in self.sampled_params]
+        sampled = {'sampled_s': self.sampled_s, 'num_samples': self.num_samples,}
+        save_yaml(dictionary=sampled, file_path=os.path.join(self.run_folder, 'sampled.yaml'))
+
+        save_yaml(dictionary={'s_range': self.s_range}, file_path=os.path.join(self.run_folder, 'params.yaml'))
 
 
 class DoubleRun(Run):
@@ -163,7 +227,7 @@ class DoubleRun(Run):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run ABC simulations')
     parser.add_argument('--expname', type=str, required=True, help='Name of the experiment. There must be a folder with this name in runs/.')
-    parser.add_argument('--sample', type=str, required=True, choices=['selection', 'double'], 
+    parser.add_argument('--sample', type=str, required=False, choices=['selection', 'double'], 
                         help='double to sample both the selection parameter and the starting passage, simple to sample only the selection parameter given the starting passage.')
     parser.add_argument('--start', type=int, required=False, help='Starting passage when we sample only the selection parameter.')
 
@@ -175,12 +239,16 @@ if __name__ == "__main__":
     # num_samples = 100
     num_samples = 1000
 
-    if sample == 'selection':
+    if expname == 'experiments/P4P15/runs':
+        num_samples = 10
+        s_range = [0, 0.05]
+        run = P4P15Run(s_range=s_range, num_samples=num_samples, expname=expname)
+    elif sample == 'selection':
         start = args.start
         run = SelectionRun(s_range=s_range, start=start, num_samples=num_samples, expname=expname)
     elif sample == 'double':
         start_range = [-9, 1]
         run = DoubleRun(s_range=s_range, start_range=start_range, num_samples=num_samples, expname=expname)
-
+        
     run.run_simulations()
     run.save_results()

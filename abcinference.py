@@ -110,45 +110,45 @@ class ABCInference:
         os.makedirs(paths['results'], exist_ok=True)
 
         plot_histograms_dict_overlay(
-            dictionaries=[top_simulationsP4[0]], plot_ref=True, true_data=self.reference_data['P4'],
-            labels=['Simulation'], colors=['turquoise'],
+            dictionaries=[top_simulationsP4[0]], plot_ref=True, true_data=self.reference_data['P4'], ref_color='turquoise',
+            labels=['Simulation'], colors=['#FF005E'],
             title=f'Reference and best simulation at P4 with {fitness} fitness (s={top_s[0]:.3f}, start P{start}, distance={top_distancesP4[0]:.1f})',
             save=True, show=False, filepath=paths['plots']+'bestsimulationp4.png')
 
         plot_histograms_dict_overlay(
-            dictionaries=[top_simulationsP15[0]], plot_ref=True, true_data=self.reference_data['P15'],
-            labels=['Simulation'], colors=['turquoise'],
+            dictionaries=[top_simulationsP15[0]], plot_ref=True, true_data=self.reference_data['P15'], ref_color='turquoise',
+            labels=['Simulation'], colors=['#FF005E'],
             title=f'Reference and best simulation at P15 with {fitness} fitness (s={top_s[0]:.3f}, start P{start}, distance={top_distancesP15[0]:.1f})',
             save=True, show=False, filepath=paths['plots']+'bestsimulationp15.png')
 
         plot_histograms_dict_overlay(
-            dictionaries=top_simulationsP4, true_data=self.reference_data['P4'], bin_size=10, plot_ref=True, true_label='Reference at P4',
+            dictionaries=top_simulationsP4, true_data=self.reference_data['P4'], bin_size=10, plot_ref=True, true_label='Reference at P4', ref_color='turquoise',
             title=f'ecDNA counts at passage 4 and {top_percent}% best simulations (over {self.num_samples} samples) with {fitness} fitness',
-            plot_avg=True, plot_all=False, show=False, save=True, filepath=paths['plots']+'topsimulationsP4.png',
+            plot_avg=True, plot_all=False, show=False, save=True, filepath=paths['plots']+'topsimulationsP4.png', CI_fillcolor='rgba(181,255,209,0.2)',
             labels=[""]*len(top_s), colors=['gold']*len(top_s), opacity=[0.3]*len(top_s))
 
         plot_histograms_dict_overlay(
-            dictionaries=top_simulationsP15, true_data=self.reference_data['P15'], bin_size=10, plot_ref=True, true_label='Reference at P15',
+            dictionaries=top_simulationsP15, true_data=self.reference_data['P15'], bin_size=10, plot_ref=True, true_label='Reference at P15', ref_color='turquoise',
             title=f'ecDNA counts at Passage 15 and {top_percent}% best simulations (over {self.num_samples} samples) with {fitness} fitness',
-            plot_avg=True, plot_all=False, show=False, save=True, filepath=paths['plots']+'topsimulationsP15.png',
+            plot_avg=True, plot_all=False, show=False, save=True, filepath=paths['plots']+'topsimulationsP15.png', CI_fillcolor='rgba(181,255,209,0.2)',
             labels=[""]*len(top_s), colors=['gold']*len(top_s), opacity=[0.3]*len(top_s))
         
         if expname=='CAM277':
             plot_posterior(
                 s_values=self.sampled_s, distances=self.distances, top_percent=top_percent, save=True, show=False, 
-                add_ref=False, plot_color='paleturquoise', filepath=paths['plots']+'posterior.png')
+                add_ref=False, filepath=paths['plots']+'posterior.png', posterior_color='coral')
         else: 
             plot_posterior(
                 s_values=self.sampled_s, distances=self.distances, top_percent=top_percent, save=True, show=False, 
-                add_ref=True, sref=sref, plot_color='paleturquoise', filepath=paths['plots']+'posterior.png')
+                add_ref=True, sref=sref, filepath=paths['plots']+'posterior.png', posterior_color='coral')
 
         plot_best_points_util(self.sampled_s, self.distances, top_percent=top_percent, save=True, show=False, filepath=paths['plots']+'bestpoints.png')
         
         qqplot(simulation=top_simulationsP4[0], reference=self.reference_data['P4'], title='Quantile-Quantile plot at passage 4', show=False, save=True, filepath=paths['plots']+'qqp4.png')
         qqplot(simulation=top_simulationsP15[0], reference=self.reference_data['P15'], title='Quantile-Quantile plot at passage 15', show=False, save=True, filepath=paths['plots']+'qqp15.png')
 
-        plot_ecdfs(distributions=[self.reference_data['P4'], top_simulationsP4[0]], labels=['Reference','Best simulation'], title='ECDFs at passage 4', show=False, save=True, filepath=paths['plots']+'ecdfp4.png')
-        plot_ecdfs(distributions=[self.reference_data['P15'], top_simulationsP15[0]], labels=['Reference','Best simulation'], title='ECDFs at passage 15', show=False, save=True, filepath=paths['plots']+'ecdfp15.png')
+        plot_ecdfs(distributions=[self.reference_data['P4'], top_simulationsP4[0]], labels=['Reference','Best simulation'], colors=['turquoise','#FF005E'], title='ECDFs at passage 4', show=False, save=True, filepath=paths['plots']+'ecdfp4.png')
+        plot_ecdfs(distributions=[self.reference_data['P15'], top_simulationsP15[0]], labels=['Reference','Best simulation'], colors=['turquoise','#FF005E'], title='ECDFs at passage 15', show=False, save=True, filepath=paths['plots']+'ecdfp15.png')
         
         # SAVE RESULTS -----------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -165,6 +165,9 @@ class ABCInference:
 
         print('\nSaving top simulations...')
         save_yaml(dictionary={'P4': top_simulationsP4, 'P15': top_simulationsP15}, file_path=paths['results']+'topsimulations.yaml')
+
+        print('\nSaving sampled s values...')
+        save_yaml(dictionary=self.sampled_s, file_path=paths['results']+'sampled_s.yaml')
 
 
 class SelectionInference(ABCInference):

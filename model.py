@@ -55,7 +55,7 @@ class Population:
             self.population[0] += 1
         else: 
             n = 2 * key
-            k = np.random.binomial(n, 0.5)
+            k = int(np.random.binomial(n, 0.5))
             if k not in self.population.keys(): self.fitness_by_key[k] = self.cell_fitness(k)
             if n-k not in self.population.keys(): self.fitness_by_key[n-k] = self.cell_fitness(n-k)
 
@@ -75,7 +75,7 @@ class Population:
 
             # Pick a random cell uniformly among all cells with ecDNA
             counts = [self.population[key] for key in ecDNA_keys]
-            key = np.random.choice(ecDNA_keys, p=counts/np.sum(counts))
+            key = int(np.random.choice(ecDNA_keys, p=counts/np.sum(counts)))
 
             self.cell_division(key)
 
@@ -351,7 +351,7 @@ class Population:
 
         self.cell_counts = cell_counts
         self.times = times
-        return times, cell_counts
+        return
     
     def get_mean(self, time_index=-1):
         weighted_sum = sum(key * value for key, value in self.cell_counts[time_index].items())
@@ -367,7 +367,8 @@ class Population:
                        plot_color='#DD0054', 
                        plot_bgcolor='#F1F6FA',
                        title='Histogram of ecDNA copy number',
-                       save_fig=False):
+                       save=False, filepath=None,
+                       width=500,height=500):
 
         timestep_ecDNA_counts = self.cell_counts[time_index]
         data = [key for key, value in timestep_ecDNA_counts.items() for _ in range(value)]
@@ -377,17 +378,18 @@ class Population:
         layout = go.Layout(
             title=title+f" on {sum(timestep_ecDNA_counts.values()):,.0f} cells"+f" with {self.model} model and {self.fitness} fitness function (s={self.s:.3f})",
             xaxis=dict(title='Number of copies'),
+            yaxis=dict(title='Count'),
             bargap=0.1,
             plot_bgcolor=plot_bgcolor
         )
 
         fig = go.Figure(data=[histogram_trace], layout=layout)
+        fig.update_layout(width=width, height=height)
 
         fig.show()
 
-        if save_fig:
-            fig.update_layout(width=1000, height=500)
-            fig.write_image(f"ecDNA_histogram_timestep[{time_index}].png", scale=3)
+        if save:
+            fig.write_image(filepath, scale=5)
 
     def plot_evolution_area(self, 
                             colors={}, 
